@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * 零依赖静态文件服务器，用于本地 demo / 自动化测试靶子。
- * 用法：node demo-app/server.mjs [--port 4173]
+ * 用法：node demo-app/server.mjs [--port 4173] [--host 127.0.0.1]
  */
 import { createServer } from 'node:http';
 import { createReadStream } from 'node:fs';
@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
-const HOST = '127.0.0.1';
+const DEFAULT_HOST = '127.0.0.1';
 const DEFAULT_PORT = 4173;
 
 const MIME_TYPES = {
@@ -26,26 +26,44 @@ const MIME_TYPES = {
   '.md': 'text/markdown; charset=utf-8',
 };
 
-function parsePort(argv) {
+// 依次尝试 `--name value` 与 `--name=value` 两种写法；没出现则返回 undefined。
+function readOption(argv, name) {
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    let raw = null;
-    if (arg === '--port') {
-      raw = argv[i + 1];
-    } else if (arg.startsWith('--port=')) {
-      raw = arg.slice('--port='.length);
+    if (arg === `--${name}`) {
+      return i + 1 < argv.length ? argv[i + 1] : '';
     }
-    if (raw === null) {
-      continue;
+    if (arg.startsWith(`--${name}=`)) {
+      return arg.slice(`--${name}=`.length);
     }
-    const port = Number(raw);
-    if (!Number.isInteger(port) || port < 1 || port > 65535) {
-      console.error(`invalid --port value: ${raw}`);
-      process.exit(1);
-    }
-    return port;
   }
-  return DEFAULT_PORT;
+  return undefined;
+}
+
+function parsePort(argv) {
+  const raw = readOption(argv, 'port');
+  if (raw === undefined) {
+    return DEFAULT_PORT;
+  }
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    console.error(`invalid --port value: ${raw}`);
+    process.exit(1);
+  }
+  return port;
+}
+
+// 默认只监听回环地址；runner 与浏览器分容器时用 --host 0.0.0.0 放开。
+function parseHost(argv) {
+  const raw = readOption(argv, 'host');
+  if (raw === undefined) {
+    return DEFAULT_HOST;
+  }
+  if (raw === '') {
+    console.error('invalid --host value: (empty)');
+    process.exit(1);
+  }
+  return raw;
 }
 
 function sendText(res, status, text, contentType = 'text/plain; charset=utf-8') {
@@ -65,6 +83,7 @@ function resolvePathname(requestUrl) {
 }
 
 const port = parsePort(process.argv.slice(2));
+const host = parseHost(process.argv.slice(2));
 
 const server = createServer(async (req, res) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -108,8 +127,14 @@ const server = createServer(async (req, res) => {
     const stream = createReadStream(target);
     stream.on('error', () => res.destroy());
     stream.pipe(res);
-  } catch {
-    sendText(res, 404, 'Not Found');
+  } catch (error) {
+    // 只有「不存在」才是 404；EACCES / ELOOP / ENAMETOOLONG 等属于环境问题，报 500 并留日志。
+    if (error && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) {
+      sendText(res, 404, 'Not Found');
+      return;
+    }
+    console.error(`failed to read ${filePath}: ${error && error.message ? error.message : error}`);
+    sendText(res, 500, 'Internal Server Error');
   }
 });
 
@@ -118,12 +143,30 @@ server.on('error', (error) => {
   process.exit(1);
 });
 
-server.listen(port, HOST, () => {
-  console.log(`listening on http://${HOST}:${port}`);
+server.listen(port, host, () => {
+  console.log(`listening on http://${host}:${port}`);
 });
+
+let shuttingDown = false;
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {
+    // server.close() 只停止接受新连接，已建立的 keep-alive 连接会让进程挂着等浏览器超时；
+    // 作为被 runner 反复启停的靶子，这里主动断开空闲连接、再兜底断开全部连接和硬退出。
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
+
     server.close(() => process.exit(0));
+    if (typeof server.closeIdleConnections === 'function') {
+      server.closeIdleConnections();
+    }
+    setTimeout(() => {
+      if (typeof server.closeAllConnections === 'function') {
+        server.closeAllConnections();
+      }
+    }, 200).unref();
+    setTimeout(() => process.exit(0), 1000).unref();
   });
 }

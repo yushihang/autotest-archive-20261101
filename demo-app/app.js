@@ -2,10 +2,12 @@
 (function () {
   'use strict';
 
+  var loginSection = document.getElementById('login-section');
   var loginForm = document.getElementById('login-form');
   var emailInput = document.getElementById('email');
   var passwordInput = document.getElementById('password');
   var loginError = document.getElementById('login-error');
+  var loginStatus = document.getElementById('login-status');
   var welcome = document.getElementById('welcome');
   var welcomeText = document.getElementById('welcome-text');
 
@@ -20,6 +22,8 @@
   var todos = [];
   var nextId = 1;
   var activeFilter = 'all';
+  // 列表整表重建后要把焦点放回哪个元素（见 render）。
+  var focusRequest = null;
 
   function showError(message) {
     loginError.textContent = message;
@@ -44,6 +48,18 @@
     return null;
   }
 
+  // 用户改正输入后立刻收起旧错误，不必等到再次提交。
+  function clearErrorOnInput(input) {
+    input.addEventListener('input', function () {
+      if (loginError.textContent !== '') {
+        clearError();
+      }
+    });
+  }
+
+  clearErrorOnInput(emailInput);
+  clearErrorOnInput(passwordInput);
+
   loginForm.addEventListener('submit', function (event) {
     event.preventDefault();
     var email = emailInput.value.trim();
@@ -57,7 +73,11 @@
 
     clearError();
     loginForm.hidden = true;
+    loginSection.hidden = true;
     welcomeText.textContent = '欢迎，' + email;
+    // 先在常驻的 live region 里写内容，再显示视觉区块：
+    // hidden 元素从隐藏变可见时，读屏软件不会保证播报其内容。
+    loginStatus.textContent = '欢迎，' + email;
     welcome.hidden = false;
   });
 
@@ -73,7 +93,23 @@
     });
   }
 
+  // 某条待办离开可见列表后，焦点该落到哪个元素：
+  // 优先原位置的下一条，其次上一条，都没有就回到输入框。
+  function focusIdAfterRemoval(index) {
+    var remaining = visibleTodos();
+    var next = remaining[index] || remaining[index - 1];
+    return next ? 'todo-' + next.id + '-toggle' : 'todo-input';
+  }
+
   function render() {
+    // 整表重建会让当前焦点节点消失、焦点掉回 body，先记下要回到哪个元素。
+    var active = document.activeElement;
+    var restoreId = focusRequest;
+    if (restoreId === null && active && active.id && todoList.contains(active)) {
+      restoreId = active.id;
+    }
+    focusRequest = null;
+
     todoList.textContent = '';
 
     visibleTodos().forEach(function (todo) {
@@ -90,7 +126,10 @@
       toggle.setAttribute('data-testid', 'todo-toggle');
       toggle.setAttribute('aria-label', '完成：' + todo.title);
       toggle.addEventListener('change', function () {
+        var index = visibleTodos().indexOf(todo);
         todo.completed = toggle.checked;
+        var stillVisible = visibleTodos().indexOf(todo) !== -1;
+        focusRequest = stillVisible ? toggle.id : focusIdAfterRemoval(index);
         render();
       });
 
@@ -107,9 +146,11 @@
       remove.textContent = '删除';
       remove.setAttribute('aria-label', '删除：' + todo.title);
       remove.addEventListener('click', function () {
+        var index = visibleTodos().indexOf(todo);
         todos = todos.filter(function (candidate) {
           return candidate.id !== todo.id;
         });
+        focusRequest = focusIdAfterRemoval(index);
         render();
       });
 
@@ -118,6 +159,11 @@
       item.appendChild(remove);
       todoList.appendChild(item);
     });
+
+    var target = restoreId === null ? null : document.getElementById(restoreId);
+    if (target !== null) {
+      target.focus();
+    }
   }
 
   function addTodo() {
@@ -134,6 +180,11 @@
   todoAdd.addEventListener('click', addTodo);
 
   todoInput.addEventListener('keydown', function (event) {
+    // 中文/日文输入法用 Enter 上屏候选词时也会派发 key === 'Enter' 的 keydown，
+    // 此时输入框里还是未上屏的拼音串，必须跳过，否则会误加一条待办并清空输入。
+    if (event.isComposing || event.keyCode === 229) {
+      return;
+    }
     if (event.key === 'Enter') {
       event.preventDefault();
       addTodo();
