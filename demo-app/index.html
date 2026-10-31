@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Demo App - 登录与待办</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+    fieldset { border: 1px solid #ccc; margin: 0 0 1.5rem; padding: 1rem; }
+    label { display: block; margin: 0.5rem 0 0.25rem; }
+    input[type="email"], input[type="password"], #todo-input { width: 100%; box-sizing: border-box; padding: 0.35rem; }
+    #login-error { color: #b00020; margin-top: 0.5rem; }
+    [hidden] { display: none !important; }
+    ul { list-style: none; padding: 0; }
+    li { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0; }
+    .todo-title { flex: 1; }
+    .todo-title.done { text-decoration: line-through; color: #777; }
+    .filters button[aria-pressed="true"] { font-weight: bold; outline: 2px solid #555; }
+    .row { display: flex; gap: 0.5rem; }
+  </style>
+</head>
+<body>
+  <h1>Demo App</h1>
+
+  <section id="login-section" aria-labelledby="login-heading">
+    <h2 id="login-heading">登录</h2>
+    <form id="login-form" novalidate>
+      <label for="email">邮箱</label>
+      <input id="email" name="email" type="email" autocomplete="username" placeholder="you@example.com">
+
+      <label for="password">密码</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" placeholder="密码">
+
+      <div class="row" style="margin-top: 0.75rem;">
+        <button id="login-submit" type="submit" data-testid="login-submit">登录</button>
+      </div>
+
+      <p id="login-error" role="alert" hidden></p>
+    </form>
+  </section>
+
+  <section id="welcome" hidden aria-live="polite">
+    <h2>欢迎</h2>
+    <p id="welcome-text"></p>
+  </section>
+
+  <section id="todo-section" aria-labelledby="todo-heading">
+    <h2 id="todo-heading">待办</h2>
+
+    <div class="row">
+      <input id="todo-input" name="todo" type="text" placeholder="输入待办内容" aria-label="待办内容">
+      <button id="todo-add" type="button" data-testid="todo-add">添加</button>
+    </div>
+
+    <div class="filters" role="group" aria-label="过滤器">
+      <button type="button" data-filter="all" aria-pressed="true">全部</button>
+      <button type="button" data-filter="active" aria-pressed="false">未完成</button>
+      <button type="button" data-filter="completed" aria-pressed="false">已完成</button>
+    </div>
+
+    <ul id="todo-list" data-testid="todo-list"></ul>
+  </section>
+
+  <script src="./app.js"></script>
+</body>
+</html>
