@@ -20,7 +20,7 @@
  * 页面上的一个可交互元素。
  *
  * @typedef {object} InventoryElement
- * @property {string} selector 能唯一定位该元素的 CSS 选择器（执行阶段直接用）
+ * @property {string} selector 能唯一定位该元素的 Playwright 定位器字符串（CSS 或 role= 选择器引擎，执行阶段交给 page.locator()）
  * @property {string} role 元素的 ARIA role，取不到时用 'other'
  * @property {string} name 可访问名：可见文案 / label / aria-label，用于生成用例标题
  * @property {ElementKind} kind 元素种类，决定能对它做哪些动作
