@@ -127,7 +127,9 @@ export function resultsOf(results) {
  */
 export function runMetaOf(results) {
   const list = resultsOf(results);
-  const container = isObject(results) ? results : {};
+  // 数组也是容器：runPlan() 把 aborted / skipped / elapsedMs / budget / baseUrl
+  // 以非枚举属性挂在 RunResult[] 上，这里必须原样读取，不能因为它是数组就丢掉。
+  const container = results !== null && typeof results === 'object' ? results : {};
   const budget = isObject(container.budget) ? container.budget : {};
   const limits = isObject(container.limits) ? container.limits : {};
 

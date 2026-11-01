@@ -239,10 +239,97 @@ test('同输入两次渲染逐字节一致，且不写生成时间', () => {
 test('没有预算账本时如实写「未记录」，不编造步数', () => {
   withTempDir((dir) => {
     const passed = caseOf();
-    // 只传 RunResult[]：没有 limits / budget / elapsedMs，只有 attempt 的 durationMs。
+    // 裸的 RunResult[] 字面量：没有 limits / budget / elapsedMs，只有 attempt 的 durationMs。
+    // 注意这不是 runPlan() 的返回——后者会把元信息挂成数组的非枚举属性，见下一条。
     const markdown = renderReport([passed], [resultOf(passed.id, 'passed')], { outputDir: dir });
 
     expect(markdown).toContain('未记录（需要 runPlanReport 的 budget）');
     expect(markdown).toContain('200 ms（各次尝试耗时累加）');
+  });
+});
+
+test('runPlan() 的返回形状：RunResult[] 上的非枚举元信息不能丢', () => {
+  withTempDir((dir) => {
+    const passed = caseOf();
+    const skippedCase = caseOf({
+      id: 'P1-too-many-steps',
+      title: '步骤数超过单例上限',
+      priority: 'P1',
+    });
+
+    // 与 runPlan() 一致：元信息挂在数组的非枚举属性上，JSON 序列化看不到，但报告必须读得到。
+    const results = [resultOf(passed.id, 'passed')];
+    Object.defineProperties(results, {
+      aborted: { value: false, enumerable: false },
+      abortReason: { value: null, enumerable: false },
+      skipped: {
+        value: [{ caseId: skippedCase.id, reason: '用例有 13 步，超过单例上限 12 步，整条不执行' }],
+        enumerable: false,
+      },
+      elapsedMs: { value: 1500, enumerable: false },
+      budget: {
+        value: {
+          maxWallMs: 60_000,
+          maxCases: 10,
+          maxSteps: 12,
+          elapsedMs: 1500,
+          casesStarted: 1,
+          casesCompleted: 1,
+          casesSkipped: 1,
+          stepsRun: 3,
+        },
+        enumerable: false,
+      },
+      limits: { value: { maxWallMs: 60_000, maxCases: 10, maxSteps: 12 }, enumerable: false },
+      baseUrl: { value: 'http://127.0.0.1:4100', enumerable: false },
+    });
+
+    const markdown = renderReport([passed, skippedCase], results, { outputDir: dir });
+
+    // 被测地址来自 results.baseUrl，而不是「未记录」。
+    expect(markdown).toContain('| 被测地址 | `http://127.0.0.1:4100` |');
+    // 耗时 / 步数来自 elapsedMs / budget。
+    expect(markdown).toContain('1.5s（1500 ms）');
+    expect(markdown).toContain('3 步');
+    // 被跳过的用例走「执行阶段跳过」，而不是被当成没有结果的用例。
+    expect(markdown).toContain('### 执行阶段跳过的用例');
+    expect(markdown).toContain('P1-too-many-steps');
+    expect(markdown).toContain('超过单例上限 12 步');
+    expect(markdown).not.toContain('没有执行结果（未执行或结果缺失）');
+  });
+});
+
+test('aborted 的非枚举属性要显示真实的中止原因', () => {
+  withTempDir((dir) => {
+    const passed = caseOf();
+    const pending = caseOf({ id: 'P1-pending', title: '还没执行的用例', priority: 'P1' });
+
+    const results = [resultOf(passed.id, 'passed')];
+    Object.defineProperties(results, {
+      aborted: { value: true, enumerable: false },
+      abortReason: { value: '超出 maxWallMs 预算（60000 ms）', enumerable: false },
+      skipped: { value: [], enumerable: false },
+      elapsedMs: { value: 60_100, enumerable: false },
+      budget: {
+        value: {
+          maxWallMs: 60_000,
+          maxCases: 10,
+          maxSteps: 12,
+          elapsedMs: 60_100,
+          casesStarted: 1,
+          casesCompleted: 1,
+          casesSkipped: 0,
+          stepsRun: 3,
+        },
+        enumerable: false,
+      },
+      limits: { value: { maxWallMs: 60_000, maxCases: 10, maxSteps: 12 }, enumerable: false },
+      baseUrl: { value: 'http://127.0.0.1:4100', enumerable: false },
+    });
+
+    const markdown = renderReport([passed, pending], results, { outputDir: dir });
+
+    expect(markdown).toContain('是：超出 maxWallMs 预算（60000 ms）');
+    expect(markdown).toContain('未执行：超出 maxWallMs 预算（60000 ms）');
   });
 });

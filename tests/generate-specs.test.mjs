@@ -15,7 +15,7 @@ import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 
 import { moduleNameOf, writeSpecs } from '../src/generate/specs.mjs';
-import { renderSpecCase } from '../src/generate/template.mjs';
+import { DEFAULT_BASE_URL, renderSpecCase } from '../src/generate/template.mjs';
 
 /**
  * @param {Partial<import('../src/types.mjs').TestCase>} [overrides]
@@ -106,6 +106,25 @@ test('只给 passed 的用例生成 spec，标题与断言来自 TestCase', () =
     // 失败用例不进代码
     expect(source).not.toContain('P1-todo-delete');
     expect(source).not.toContain('P1-todo-toggle');
+  });
+});
+
+test('runPlan() 的 baseUrl 非枚举属性决定生成 spec 的地址，不回落到默认值', () => {
+  withTempDir((dir) => {
+    const passed = caseOf();
+
+    // 与 runPlan() 一致：元信息挂在数组的非枚举属性上，JSON 序列化看不到。
+    const results = [resultOf(passed.id, 'passed')];
+    Object.defineProperty(results, 'baseUrl', {
+      value: 'http://127.0.0.1:4100',
+      enumerable: false,
+    });
+
+    writeSpecs([passed], results, dir);
+
+    const source = readFileSync(join(dir, 'specs', 'root.spec.mjs'), 'utf8');
+    expect(source).toContain('http://127.0.0.1:4100');
+    expect(source).not.toContain(DEFAULT_BASE_URL);
   });
 });
 
