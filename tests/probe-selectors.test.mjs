@@ -302,6 +302,41 @@ test.describe('isUnstableSelector', () => {
     }
   });
 
+  test('单选组同名 name：带 id 的那个走 id，另一个仍判不稳定', () => {
+    // 回归：曾经只数「最终选中的选择器字符串」，带 id 的元素改走 `#plan-a` 之后
+    // `[name="plan"]` 在 selectors 表里只剩 1 次，另一个 radio 被误判成稳定。
+    const facts = [
+      { tag: 'input', id: 'plan-a', attrName: 'plan', role: 'radio', name: 'A', kind: 'radio' },
+      { tag: 'input', attrName: 'plan', role: 'radio', name: 'B', kind: 'radio' },
+    ];
+    const index = buildSelectorIndex(facts);
+
+    const [withId, withoutId] = facts;
+    expect(buildSelector(withId).selector).toBe('#plan-a');
+    expect(buildSelector(withoutId).selector).toBe('[name="plan"]');
+
+    expect(isUnstableSelector(withId, 'id', '#plan-a', index)).toBe(false);
+    expect(isUnstableSelector(withoutId, 'name', '[name="plan"]', index)).toBe(true);
+    expect(toInventoryElement(withoutId, '/', index).unstable).toBe(true);
+  });
+
+  test('testid 按属性值计数：跨不同测试属性的同名 test id 也判不稳定', () => {
+    // 两个元素最终选择器不同（一个 data-testid、一个 data-cy），selectors 表里各算 1 次，
+    // 但测试 id 值相同，语义上分不清谁是谁。按值计数取保守结果：判不稳定。
+    const facts = [
+      { tag: 'button', testId: 'save', role: 'button', name: '保存' },
+      { tag: 'button', testId: 'save', testIdAttr: 'data-cy', role: 'button', name: '保存' },
+    ];
+    const index = buildSelectorIndex(facts);
+
+    const [plain, dataCy] = facts;
+    expect(buildSelector(plain).selector).toBe('[data-testid="save"]');
+    expect(buildSelector(dataCy).selector).toBe('[data-cy="save"]');
+
+    expect(isUnstableSelector(plain, 'testid', '[data-testid="save"]', index)).toBe(true);
+    expect(isUnstableSelector(dataCy, 'testid', '[data-cy="save"]', index)).toBe(true);
+  });
+
   test('只有 role+name 可用时，同页重名 → 不稳定', () => {
     const facts = [
       { tag: 'a', role: 'link', name: 'Home' },

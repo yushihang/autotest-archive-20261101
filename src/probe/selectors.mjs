@@ -349,6 +349,10 @@ export function buildSelectorIndex(factsList) {
  * 注：有 name 属性的元素用的是 `[name=]`，此时是否稳定由 name 自身唯一性决定，
  * 不再看 role+name —— 否则「同一个 label 文案下的两个不同 name 输入框」会被误判。
  *
+ * 注：唯一性按建表时的「属性值」逐项计数（testIds / ids / names / roleNames），
+ * 而不是只数最终选择器字符串：同组另一个元素可能靠更高优先级的属性选走，
+ * 让最终字符串在 selectors 表里只剩 1 次，但该 selector 在 DOM 里仍命中多个节点。
+ *
  * @param {ElementFacts} facts
  * @param {SelectorSource} source
  * @param {string} selector
@@ -360,11 +364,15 @@ export function isUnstableSelector(facts, source, selector, index) {
 
   switch (source) {
     case 'testid':
-      return false;
+      // 按 test id 的值计数，而不是按「最终选中的那个字符串」计数：
+      // selectors 表只统计恰好等于该字符串的元素，元素一旦改走别的测试属性就漏计。
+      // 值相同即视为重复（跨 data-testid / data-cy 也算），宁可保守判不稳定。
+      return (index?.testIds?.get(collapseWhitespace(facts?.testId)) ?? 0) > 1;
     case 'id':
-      return looksGeneratedId(facts?.id);
+      // 重复 id 在 HTML 里不合法但确实会出现：同时保留生成式判定。
+      return looksGeneratedId(facts?.id) || (index?.ids?.get(collapseWhitespace(facts?.id)) ?? 0) > 1;
     case 'name':
-      return false;
+      return (index?.names?.get(collapseWhitespace(facts?.attrName)) ?? 0) > 1;
     case 'role':
       return (index?.roleNames?.get(roleNameKey(facts)) ?? 0) > 1;
     default:
