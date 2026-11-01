@@ -150,7 +150,7 @@ node demo-app/server.mjs
 - **浏览器自动化**：Playwright，版本在 `package.json` 里写死精确版本号（不用 `^` / `~`）；测试侧用 `@playwright/test`。
 - **类型**：不写 TypeScript。三个契约用 JSDoc `@typedef` 定在 `src/types.mjs`，编辑器里照样有补全，运行时零开销。
 - **模块协作**：模块之间只交换 JSON——探测产出 `Inventory`，规划产出 `TestCase[]`，执行产出 `RunResult`。契约先定死，各模块才写得通。
-- **测试**：`npm test` 跑 `tests/` 下的单元测试（`playwright test`，不开浏览器）。当前覆盖配置校验的所有错误分支和契约常量。
+- **测试**：`npm test` 跑 `tests/` 下的单元测试（`playwright test`，不开浏览器）。当前覆盖配置校验的所有错误分支和契约常量。改完契约怎么验——包括没有 Node 时怎么静态检查——见 [docs/testing.md](docs/testing.md)。
 
 ### 目录结构
 
