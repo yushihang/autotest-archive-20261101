@@ -9,6 +9,9 @@
   },
   "license": "MIT",
   "scripts": {
+    "start": "node src/cli.mjs",
+    "demo": "node demo-app/server.mjs",
+    "verify": "bash scripts/verify-mvp.sh",
     "test": "playwright test"
   },
   "dependencies": {
