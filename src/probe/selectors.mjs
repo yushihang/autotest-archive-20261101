@@ -256,12 +256,17 @@ export function looksGeneratedId(value) {
 
 /**
  * role+name 的分组 key。空 name 也参与分组：同页多个无名 button 互相之间就是不唯一的。
+ *
+ * role 与 name 都按小写归一：buildSelector 产出的 role 选择器带 `i` 标记（name 不区分大小写），
+ * 索引这边若区分大小写，`Home` / `home` 两个链接会各自被当成唯一，
+ * 而实际用 `role=link[name="Home"i]` 会同时命中两者，下游必然撞 strict mode。
+ *
  * @param {ElementFacts} facts
  * @returns {string}
  */
 export function roleNameKey(facts) {
   const role = collapseWhitespace(facts?.role).toLowerCase();
-  const name = collapseWhitespace(facts?.name);
+  const name = collapseWhitespace(facts?.name).toLowerCase();
   return `${role}\u0000${name}`;
 }
 
