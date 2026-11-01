@@ -1,11 +1,12 @@
 # 开发命令
 
-两个本地校验命令：`npm run lint` 查语法，`npm test` 跑单元测试。提交前两个都跑一遍。
+三个本地校验命令：`npm run lint` 查语法，`npm test` 跑单元测试，`npm run verify` 做端到端验收。提交前至少前两个都跑一遍。
 
 | 命令 | 作用 | 依赖 |
 |---|---|---|
 | `npm run lint` | 全仓库 `.mjs` 语法检查 | 无，只要 Node.js >=20 |
 | `npm test` | 跑 `tests/` 下的单元测试 | 先 `npm install` |
+| `npm run verify`（= `./scripts/verify-mvp.sh`） | 起 demo 靶子跑一遍 CLI dry-run，端到端验收 | 先 `npm install` |
 
 ## `npm run lint`
 
@@ -39,12 +40,19 @@ node --check scripts/check.mjs && node scripts/check.mjs
 - `tests/runner-budget.test.mjs`——执行预算：`maxSteps` 只跳过该用例、`maxWallMs` / `maxCases` 中止整轮。
 - `tests/generate-specs.test.mjs`——生成器：只给 passed 生成 spec、同输入字节级一致、转义不破坏代码、按路由分文件。
 - `tests/report-markdown.test.mjs`——Markdown 报告：覆盖清单按优先级、未覆盖原因、失败证据、flaky 单列、时间与步数用量。
+- `tests/pr-guard.test.mjs`——PR 护栏：`testsDir` 之外的文件一律拦住，前缀相似路径、越界路径、强制跳过参数都不放行。
+- `tests/pr-create.test.mjs`——PR 拼装：时间戳 runId、`autotest/<runId>` 分支名、标题格式、正文里的覆盖清单 / 未覆盖原因 / 失败证据。
+- `tests/cli-args.test.mjs`——CLI 参数：默认 dry-run、`--pr` 才碰 git、`--dry-run` 与 `--pr` 互斥、未知参数不静默忽略。
 
 这些是**单元测试，不启动浏览器**。`@playwright/test` 在这里只当测试运行器用，所以装完依赖就能跑，不需要额外 `npx playwright install` 下载浏览器。
 
 首次运行前需要 `npm install`（`@playwright/test` 是 devDependency）；之后改代码直接跑即可。断言失败时退出码非 0，并打印失败用例与差异。
 
+端到端验收是另一件事：`./scripts/verify-mvp.sh`（等价于 `npm run verify`）会真的起 `demo-app/server.mjs` 并用 Playwright 跑一遍，
+退出码 0 才是 MVP 硬证据。步骤与检查项见 [docs/mvp-acceptance.md](mvp-acceptance.md)。
+
 ## 该跑哪个
 
 - 改了任意 `.mjs`：`npm run lint` 至少能挡住语法错误，再跑 `npm test` 看行为有没有变。
-- 只改文档、JSON、`.gitignore`：两个命令都不覆盖这些文件，仍然建议跑一遍，确认没有顺带改坏脚本或 `package.json`。
+- 改了 CLI、PR 护栏或执行链路：再跑一次 `npm run verify`，确认端到端仍然跑得通。
+- 只改文档、JSON、`.gitignore`：这几个命令都不覆盖这些文件，仍然建议跑一遍，确认没有顺带改坏脚本或 `package.json`。
