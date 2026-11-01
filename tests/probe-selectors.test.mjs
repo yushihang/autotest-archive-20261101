@@ -18,6 +18,7 @@ import {
   escapeIdentifier,
   isUnstableSelector,
   looksGeneratedId,
+  roleKey,
   roleNameKey,
   sortByStability,
   toInventoryElement,
@@ -231,6 +232,14 @@ test.describe('roleNameKey', () => {
   });
 });
 
+test.describe('roleKey', () => {
+  test('只取 role，折叠空白并转小写', () => {
+    expect(roleKey({ role: '  BUTTON ', name: '保存' })).toBe('button');
+    expect(roleKey({})).toBe('');
+    expect(roleKey(undefined)).toBe('');
+  });
+});
+
 test.describe('buildSelectorIndex', () => {
   test('逐项计数，空属性不占位', () => {
     const index = buildSelectorIndex([
@@ -242,6 +251,8 @@ test.describe('buildSelectorIndex', () => {
     expect(index.ids.get('save')).toBe(1);
     expect(index.names.get('save')).toBe(1);
     expect(index.roleNames.get('button\u0000保存')).toBe(1);
+    // 裸 role 选择器要按 role 计数：同页两个 button，无名那个的 `role=button` 不唯一。
+    expect(index.roles.get('button')).toBe(2);
     // 第二项没有 testId / id / name 属性，不该产生空字符串的计数。
     expect(index.testIds.has('')).toBe(false);
     expect(index.ids.has('')).toBe(false);
@@ -391,6 +402,31 @@ test.describe('toInventoryElement', () => {
     expect(elements[0].selector).not.toBe(elements[1].selector);
     expect(elements[0].unstable).toBe(true);
     expect(elements[1].unstable).toBe(true);
+  });
+
+  test('无名元素生成裸 role 选择器时，同页还有别的同类 role → unstable', () => {
+    // `role=button` 不带 [name=] 时 Playwright 不按名字过滤，会命中页面上所有 button。
+    // 图标按钮（可访问名为空）不能因为「只有它自己没名字」就被判稳定，
+    // 否则下游拿到的是一个必然 strict mode 失败的选择器。
+    const icon = { tag: 'button', role: 'button', kind: 'button' };
+    const facts = [
+      icon,
+      { tag: 'button', role: 'button', name: '保存', kind: 'button' },
+      { tag: 'button', role: 'button', name: '取消', kind: 'button' },
+    ];
+
+    const element = toInventoryElement(icon, '/', buildSelectorIndex(facts));
+
+    expect(element.selector).toBe('role=button');
+    expect(element.unstable).toBe(true);
+  });
+
+  test('同页只有一个该类 role 时，裸 role 选择器仍然稳定', () => {
+    const icon = { tag: 'button', role: 'button', kind: 'button' };
+    const element = toInventoryElement(icon, '/', buildSelectorIndex([icon]));
+
+    expect(element.selector).toBe('role=button');
+    expect(element).not.toHaveProperty('unstable');
   });
 
   test('未知 kind 与空 role 都归到 other', () => {

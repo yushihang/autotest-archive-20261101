@@ -43,6 +43,7 @@
  * @property {Map<string, number>} testIds 每个测试 id 出现次数
  * @property {Map<string, number>} ids 每个 id 出现次数
  * @property {Map<string, number>} names 每个 name 属性出现次数
+ * @property {Map<string, number>} roles 每个 role 出现次数（无名元素的裸 role 选择器靠它判唯一）
  * @property {Map<string, number>} roleNames 每个 role+name 组合出现次数
  * @property {Map<string, number>} selectors 每个生成出来的选择器出现次数
  */
@@ -255,6 +256,16 @@ export function looksGeneratedId(value) {
 }
 
 /**
+ * role 的分组 key，统一小写，与 buildSelector 产出的 role 选择器一致。
+ *
+ * @param {ElementFacts} facts
+ * @returns {string}
+ */
+export function roleKey(facts) {
+  return collapseWhitespace(facts?.role).toLowerCase();
+}
+
+/**
  * role+name 的分组 key。空 name 也参与分组：同页多个无名 button 互相之间就是不唯一的。
  *
  * role 与 name 都按小写归一：buildSelector 产出的 role 选择器带 `i` 标记（name 不区分大小写），
@@ -265,9 +276,8 @@ export function looksGeneratedId(value) {
  * @returns {string}
  */
 export function roleNameKey(facts) {
-  const role = collapseWhitespace(facts?.role).toLowerCase();
   const name = collapseWhitespace(facts?.name).toLowerCase();
-  return `${role}\u0000${name}`;
+  return `${roleKey(facts)}\u0000${name}`;
 }
 
 /**
@@ -320,6 +330,7 @@ export function buildSelectorIndex(factsList) {
     testIds: new Map(),
     ids: new Map(),
     names: new Map(),
+    roles: new Map(),
     roleNames: new Map(),
     selectors: new Map(),
   };
@@ -328,6 +339,7 @@ export function buildSelectorIndex(factsList) {
     bump(index.testIds, collapseWhitespace(facts?.testId));
     bump(index.ids, collapseWhitespace(facts?.id));
     bump(index.names, collapseWhitespace(facts?.attrName));
+    bump(index.roles, roleKey(facts));
     bump(index.roleNames, roleNameKey(facts));
     bump(index.selectors, buildSelector(facts).selector);
   }
@@ -344,12 +356,13 @@ export function buildSelectorIndex(factsList) {
  * - 有 id → 稳定，除非 id 看起来是自增 / hash；
  * - 有 name → 稳定，除非 `[name=]` 重复；
  * - 只能靠 role+name → 同页 role+name 重名就不稳定；
+ * - 只有裸 role（可访问名为空）→ 同页该类 role 不止一个就不稳定，因为裸 `role=` 不做名字过滤；
  * - DOM 路径 → 一定不稳定。
  *
  * 注：有 name 属性的元素用的是 `[name=]`，此时是否稳定由 name 自身唯一性决定，
  * 不再看 role+name —— 否则「同一个 label 文案下的两个不同 name 输入框」会被误判。
  *
- * 注：唯一性按建表时的「属性值」逐项计数（testIds / ids / names / roleNames），
+ * 注：唯一性按建表时的「属性值」逐项计数（testIds / ids / names / roles / roleNames），
  * 而不是只数最终选择器字符串：同组另一个元素可能靠更高优先级的属性选走，
  * 让最终字符串在 selectors 表里只剩 1 次，但该 selector 在 DOM 里仍命中多个节点。
  *
@@ -374,6 +387,12 @@ export function isUnstableSelector(facts, source, selector, index) {
     case 'name':
       return (index?.names?.get(collapseWhitespace(facts?.attrName)) ?? 0) > 1;
     case 'role':
+      // 无名元素产出的是裸 `role=<role>`。Playwright 的 role 引擎在没有 [name=] 时不按名字过滤，
+      // 会命中该 role 的全部元素（aria 可见的）—— 所以只有同页该类 role 恰好 1 个才唯一。
+      // 只数 roleNames 会漏掉「一个无名 button + 若干有名 button」这种最常见的图标按钮情形。
+      if (collapseWhitespace(facts?.name) === '') {
+        return (index?.roles?.get(roleKey(facts)) ?? 0) > 1;
+      }
       return (index?.roleNames?.get(roleNameKey(facts)) ?? 0) > 1;
     default:
       return true;
