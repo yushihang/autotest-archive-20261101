@@ -23,8 +23,7 @@ PR 里**只有测试**。业务代码一行都不改。
 
 ## 快速开始
 
-> 当前为设计阶段，以下为目标用法；尚未有可用的 CLI，仓库里能跑起来的只有一个演示靶子
-> [demo-app](demo-app/README.md)，见「现状」。
+> 当前为设计阶段，以下为目标用法；已经能跑的是配置校验（`npm test`），仓库里还有一个零依赖的演示靶子 [demo-app](demo-app/README.md)，见「现状」。
 
 配置文件（被测地址、成本上限、输出目录）的字段与校验规则见 [docs/config.md](docs/config.md)。
 
@@ -113,20 +112,34 @@ PR 里**只有测试**。业务代码一行都不改。
 
 ## 技术栈
 
-未定。当前仓库里唯一的可运行代码是一个零依赖演示靶子 `demo-app`（原生 HTML/JS + `node:http`，
-无第三方包、无构建步骤），用来给将来的 probe / runner / 生成测试提供稳定的执行对象；
-引擎本身用什么语言和测试框架还没定。
+- **运行时**：Node.js ≥ 20，原生 ESM（`.mjs`）。**没有编译步骤**——不引入 tsc / babel / 打包器，模块用 `node` 直接跑（CLI 入口还没写，现在还只有 `src/config.mjs`、`src/types.mjs` 两个模块）。
+- **浏览器自动化**：Playwright，版本在 `package.json` 里写死精确版本号（不用 `^` / `~`）；测试侧用 `@playwright/test`。
+- **类型**：不写 TypeScript。三个契约用 JSDoc `@typedef` 定在 `src/types.mjs`，编辑器里照样有补全，运行时零开销。
+- **模块协作**：模块之间只交换 JSON——探测产出 `Inventory`，规划产出 `TestCase[]`，执行产出 `RunResult`。契约先定死，各模块才写得通。
+- **测试**：`npm test` 跑 `tests/` 下的单元测试（`playwright test`，不开浏览器）。当前覆盖配置校验的所有错误分支和契约常量。
 
 ## 现状
 
-设计阶段，还没有自动化引擎本体（没有 CLI、没有 runner、没有生成测试的能力）。
+MVP 进行中。骨架和契约已经定死，探测 / 规划 / 执行还没写。
+
+已完成：
+
+- [x] 项目骨架：`package.json`（ESM、无编译步骤）与三个共享契约 `Inventory` / `TestCase` / `RunResult`，见 `src/types.mjs`。
+- [x] 配置：`src/config.mjs` 的 `loadConfig()` 读 JSON、校验并规范化，缺字段时报错带字段名；完整示例见 `autotest.config.example.json`。
+- [x] 测试：`npm test`（`playwright test`，不开浏览器）覆盖配置校验的每条错误分支与契约常量，用例在 `tests/`。
 
 仓库里现有可运行 / 可阅读的东西：
 
+- [demo-app/README.md](demo-app/README.md)——零依赖 web 演示靶子（登录 + 待办），`node demo-app/server.mjs` 后访问 http://127.0.0.1:4173 ，或直接打开 `demo-app/index.html`。
 - [docs/money-budget-demo.md](docs/money-budget-demo.md)——失败上报的演示。
-- [demo-app/README.md](demo-app/README.md)——零依赖 web 演示靶子（登录 + 待办），
-  用作将来 probe / runner / 生成测试的共同执行对象：
-  `node demo-app/server.mjs` 后访问 http://127.0.0.1:4173 ，或直接打开 `demo-app/index.html`。
+
+还没做（各自一个 issue）：
+
+- [ ] 探测：给 `baseUrl` + `routes`，产出 `Inventory`。
+- [ ] 规划：从 `Inventory` 推出 `TestCase[]`，按 P0 / P1 / P2 排序。
+- [ ] 执行：在 Playwright 里跑，产出 `RunResult` 并留下证据（输入、期望、实际、最小复现、截图）。
+- [ ] 生成与提 PR：把通过的用例写成测试文件落进 `testsDir`，按「PR 规范」提 PR。
+
 
 下一步要定的事：
 
@@ -150,6 +163,8 @@ PR 里**只有测试**。业务代码一行都不改。
 ## 安装
 
 克隆仓库即可获取本项目：`git clone <仓库地址>`。
+
+拿到代码后：`npm install`，`npm test` 跑单元测试。直接依赖的版本已写死，但仓库还**没有提交 `package-lock.json`**——锁文件要由 `npm install` 生成，装好后请一并提交，否则「可复现」只覆盖直接依赖、传递依赖每次安装仍会重解析。
 
 ## 常见问题
 

@@ -1,0 +1,23 @@
+{
+  "name": "autotest",
+  "version": "0.1.0",
+  "private": true,
+  "description": "基于 AI 的自动测试工具：探测 Web 应用页面、规划用例、在浏览器里跑，产出测试代码和报告。",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "scripts": {
+    "start": "node src/cli.mjs",
+    "demo": "node demo-app/server.mjs",
+    "verify": "bash scripts/verify-mvp.sh",
+    "test": "playwright test"
+  },
+  "dependencies": {
+    "playwright": "1.64.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1"
+  }
+}
