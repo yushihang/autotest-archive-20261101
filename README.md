@@ -133,6 +133,11 @@ PR 里**只有测试**。业务代码一行都不改。
 - [ ] PR 的频率和粒度：一次一个模块，还是按改动关联
 - [ ] 「理解业务」的证据来源：只有代码，还是也给需求文档/issue
 
+## 文档
+
+- [`docs/`](docs/)：补充文档索引
+- [`docs/drills/token-budget-demo.md`](docs/drills/token-budget-demo.md)：一次 token 预算演练的记录（已结束，仅存档；不影响本文的约束）
+
 ## 许可
 
 本项目使用 MIT 许可证。
