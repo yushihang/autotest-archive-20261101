@@ -399,6 +399,13 @@ function hasAddFlow(ctx) {
 
 /**
  * 边界用例里的触发按钮：登录字段找提交按钮，列表字段找添加按钮。
+ *
+ * 返回 null 表示这个输入框在静态 Inventory 里没有可用的提交 / 添加路径；
+ * 调用方必须据此放弃「提交后应被拒绝」类用例，否则步骤里根本没有提交动作，
+ * 执行阶段会按步骤判为 passed，产出假阳性。
+ *
+ * 列表页的兜底只接受既不是过滤器、也不是删除语义的按钮：「清空 / 清空全部」
+ * 属于删除，「留空后点它」实际清掉了列表，与「空输入被拒绝」的断言相反。
  * @param {PlanContext} ctx
  * @returns {import('../types.mjs').InventoryElement | null}
  */
@@ -414,12 +421,24 @@ export function findTriggerFor(ctx) {
     return (
       add ??
       buttons.find(
-        (element) => !isFilterButton(element, ctx.semantic) && !isSubmit(element),
+        (element) =>
+          !isFilterButton(element, ctx.semantic) &&
+          !isSubmit(element) &&
+          !isDelete(element),
       ) ??
       null
     );
   }
   return submit ?? add;
+}
+
+/**
+ * 边界输入用例必须真的能提交：没有触发按钮时整条不生成。
+ * @param {PlanContext} ctx
+ * @returns {boolean}
+ */
+function hasTrigger(ctx) {
+  return findTriggerFor(ctx) !== null;
 }
 
 /**
@@ -464,17 +483,21 @@ function submitFlowSteps(ctx, submitter) {
 
 /**
  * 边界输入的步骤：其它字段填有效值，被测字段填边界值，再触发提交 / 添加。
+ * 没有触发按钮时返回空数组，由 index.mjs 的契约检查丢弃这条候选——
+ * 不能退化成「只填值不提交」，那会让「留空提交被拒绝」的断言永远无从验证。
  * @param {PlanContext} ctx
  * @param {string} value
  * @returns {import('../types.mjs').TestStep[]}
  */
 function boundaryFillSteps(ctx, value) {
+  const trigger = findTriggerFor(ctx);
+  if (!trigger) return [];
+
   const steps = otherLoginFields(ctx).map((element) =>
     fillStep(element, sampleValue(element)),
   );
   steps.push(fillStep(ctx.element, value));
-  const trigger = findTriggerFor(ctx);
-  if (trigger) steps.push(clickStep(trigger));
+  steps.push(clickStep(trigger));
   return steps;
 }
 
@@ -716,7 +739,7 @@ export const KIND_RULES = Object.freeze({
 const EMPTY_INPUT_RULE = Object.freeze({
   id: 'empty',
   dedupeAction: 'fill:empty',
-  when: (ctx) => isTextEntry(ctx.element),
+  when: (ctx) => isTextEntry(ctx.element) && hasTrigger(ctx),
   priority: (ctx) => (ctx.semantic === 'login' ? 'P0' : 'P2'),
   title: (ctx) => `空输入：不填写「${labelOf(ctx.element)}」直接提交`,
   steps: (ctx) => boundaryFillSteps(ctx, ''),
@@ -741,7 +764,7 @@ const EMPTY_INPUT_RULE = Object.freeze({
 const WHITESPACE_INPUT_RULE = Object.freeze({
   id: 'whitespace',
   dedupeAction: 'fill:whitespace',
-  when: (ctx) => isTextEntry(ctx.element),
+  when: (ctx) => isTextEntry(ctx.element) && hasTrigger(ctx),
   priority: (ctx) => (ctx.semantic === 'login' ? 'P1' : 'P2'),
   title: (ctx) => `纯空格输入：「${labelOf(ctx.element)}」只填空格后提交`,
   steps: (ctx) => boundaryFillSteps(ctx, '   '),
@@ -766,7 +789,7 @@ const WHITESPACE_INPUT_RULE = Object.freeze({
 const LONG_INPUT_RULE = Object.freeze({
   id: 'long',
   dedupeAction: 'fill:long',
-  when: (ctx) => isTextEntry(ctx.element),
+  when: (ctx) => isTextEntry(ctx.element) && hasTrigger(ctx),
   priority: () => 'P2',
   title: (ctx) => `超长输入：向「${labelOf(ctx.element)}」填入 201 个字符`,
   steps: (ctx) => boundaryFillSteps(ctx, LONG_INPUT_VALUE),

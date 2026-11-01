@@ -174,3 +174,51 @@ test('delete-last 只在页面上只剩一个删除按钮时生成，且步骤�
   );
   expect(multiple.cases.some((testCase) => testCase.id.endsWith('delete-last'))).toBe(false);
 });
+
+test('输入框没有提交 / 添加按钮时，不生成「已提交」类边界用例', () => {
+  // 一个孤零零的搜索框：常见 UI 形状，页面上没有任何提交按钮。
+  const searchOnly = inventoryOf([
+    elementOf({ selector: '#q', role: 'searchbox', name: '搜索', kind: 'input' }),
+  ]);
+
+  const { cases } = planCasesReport(searchOnly, { maxCases: 100 });
+  // 只剩「输入合法内容」。空输入 / 纯空格 / 超长三条的步骤只能以 fill 收尾，
+  // 而执行阶段是按步骤判定 passed 的，留下它们就会产出「提交过且通过」的假阳性。
+  expect(cases.map((testCase) => testCase.steps.map((step) => step.action))).toEqual([
+    ['goto', 'fill'],
+  ]);
+  expect(cases[0].steps[1]).toMatchObject({ action: 'fill', target: '#q' });
+});
+
+test('有提交按钮时，空输入 / 纯空格 / 超长用例都以点击按钮收尾', () => {
+  const withSubmit = inventoryOf([
+    elementOf({ selector: '#q', role: 'searchbox', name: '搜索', kind: 'input' }),
+    elementOf({ selector: '#go', role: 'button', name: '提交', kind: 'button' }),
+  ]);
+
+  const boundary = planCasesReport(withSubmit, { maxCases: 100 }).cases.filter((testCase) =>
+    /-(empty|whitespace|long)$/.test(testCase.id),
+  );
+
+  expect(boundary).toHaveLength(3);
+  for (const testCase of boundary) {
+    expect(testCase.steps.map((step) => step.action)).toEqual(['goto', 'fill', 'click']);
+    expect(testCase.steps[2]).toMatchObject({ action: 'click', target: '#go' });
+  }
+});
+
+test('列表页没有添加按钮时，不把「清空」当成提交触发器', () => {
+  const listWithClear = inventoryOf([
+    elementOf({ selector: '#todo-input', role: 'textbox', name: '待办内容', kind: 'input' }),
+    elementOf({ selector: '#clear', role: 'button', name: '清空', kind: 'button' }),
+  ]);
+
+  const { cases } = planCasesReport(listWithClear, { maxCases: 100 });
+  // 清空属于删除语义：把它当触发器，「留空后点它」会真的清掉列表，
+  // 与「空输入被拒绝」的断言正好相反，所以这几条边界用例必须整条不生成。
+  expect(cases.some((testCase) => /-(empty|whitespace|long)$/.test(testCase.id))).toBe(false);
+
+  const inputCase = cases.find((testCase) => testCase.sourceElement === '#todo-input');
+  expect(inputCase).toBeTruthy();
+  expect(inputCase.steps.map((step) => step.action)).toEqual(['goto', 'fill']);
+});
