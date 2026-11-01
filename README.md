@@ -112,7 +112,7 @@ PR 里**只有测试**。业务代码一行都不改。
 
 ## 技术栈
 
-- **运行时**：Node.js ≥ 20，原生 ESM（`.mjs`）。**没有编译步骤**——不引入 tsc / babel / 打包器，模块用 `node` 直接跑（CLI 入口还没写，现在还只有 `src/config.mjs`、`src/types.mjs` 两个模块）。
+- **运行时**：Node.js >=20（`package.json` 的 `engines.node` 已声明），原生 ESM（`.mjs`）。**没有编译步骤**——不引入 tsc / babel / 打包器，模块用 `node` 直接跑（CLI 入口还没写，现在还只有 `src/config.mjs`、`src/types.mjs` 两个模块）。
 - **浏览器自动化**：Playwright，版本在 `package.json` 里写死精确版本号（不用 `^` / `~`）；测试侧用 `@playwright/test`。
 - **类型**：不写 TypeScript。三个契约用 JSDoc `@typedef` 定在 `src/types.mjs`，编辑器里照样有补全，运行时零开销。
 - **模块协作**：模块之间只交换 JSON——探测产出 `Inventory`，规划产出 `TestCase[]`，执行产出 `RunResult`。契约先定死，各模块才写得通。
@@ -161,6 +161,8 @@ MVP 进行中。骨架和契约已经定死，探测 / 规划 / 执行还没写�
 感谢所有参与测试的用户。
 
 ## 安装
+
+**运行时要求：Node.js >=20**（低于 20 的版本无法运行，`package.json` 的 `engines.node` 也声明了这一点）。
 
 克隆仓库即可获取本项目：`git clone <仓库地址>`。
 
