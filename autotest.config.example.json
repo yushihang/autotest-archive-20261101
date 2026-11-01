@@ -1,0 +1,18 @@
+{
+  "target": {
+    "baseUrl": "http://127.0.0.1:4173",
+    "routes": ["/", "/login", "/cart"]
+  },
+  "limits": {
+    "maxCases": 20,
+    "maxWallMs": 300000,
+    "maxSteps": 12
+  },
+  "runner": {
+    "repeat": 2
+  },
+  "output": {
+    "dir": "autotest-output"
+  },
+  "testsDir": "test/"
+}

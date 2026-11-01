@@ -23,3 +23,10 @@ __pycache__/
 coverage/
 .coverage
 *.log
+
+# 工具默认产物目录，与 src/config.mjs 的 DEFAULT_OUTPUT_DIR 保持一致
+autotest-output/
+
+# playwright test 自己产生的目录
+test-results/
+playwright-report/
