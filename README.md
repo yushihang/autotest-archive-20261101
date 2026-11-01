@@ -110,8 +110,6 @@ PR 里**只有测试**。业务代码一行都不改。
 
 ## 技术栈
 
-## 技术栈
-
 - **运行时**：Node.js ≥ 20，原生 ESM（`.mjs`）。**没有编译步骤**——不引入 tsc / babel / 打包器，模块用 `node` 直接跑（CLI 入口还没写，现在还只有 `src/config.mjs`、`src/types.mjs` 两个模块）。
 - **浏览器自动化**：Playwright，版本在 `package.json` 里写死精确版本号（不用 `^` / `~`）；测试侧用 `@playwright/test`。
 - **类型**：不写 TypeScript。三个契约用 JSDoc `@typedef` 定在 `src/types.mjs`，编辑器里照样有补全，运行时零开销。
