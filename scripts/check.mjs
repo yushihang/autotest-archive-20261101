@@ -6,6 +6,9 @@
  * （`src/cli.mjs` 一落地就没人记得回来改那一行），这正是 `tests/package.test.mjs` 开头反对的、
  * 「只有第一个克隆的人踩到、CI 不会红」的那类问题。遍历也不会在第一个错处停下，
  * 一次把所有失败文件都打出来，不用修一个跑一次。
+ *
+ * package.json 里的命令是 `node --check scripts/check.mjs && node scripts/check.mjs`：
+ * 前半段只自检这个门禁脚本自身，扫哪些文件仍由下面的遍历决定，加模块不必回来改 package.json。
  */
 
 import { spawnSync } from 'node:child_process';
