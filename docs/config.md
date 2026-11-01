@@ -1,15 +1,18 @@
 # 配置文件说明
 
-autotest 的配置是一份 JSON 文件，字段定义与校验逻辑在 [`src/config.mjs`](../src/config.mjs)，
-可直接复制的示例见仓库根目录的 [`autotest.config.example.json`](../autotest.config.example.json)：
+> **状态：规划中的配置契约，尚未实现。** 仓库里目前还没有配置加载模块（见 README「现状」），
+> 本文先定下字段与校验规则，实现落地时须与本文一致。
+
+autotest 的配置是一份 JSON 文件，可直接复制的示例见仓库根目录的
+[`autotest.config.example.json`](../autotest.config.example.json)：
 
 ```bash
 cp autotest.config.example.json autotest.config.json
 ```
 
-通过 `loadConfig(path)` 读取（路径相对当前工作目录解析），校验和规范化一次完成。
+规划中的读取入口是 `loadConfig(path)`（路径相对当前工作目录解析），校验和规范化一次完成。
 下游模块拿到的是规范化后的值：`target.baseUrl` 不带结尾 `/`、`testsDir` 一定带结尾 `/`、
-`target.routes` 已去重。本文与代码不一致时以 `src/config.mjs` 为准。
+`target.routes` 已去重。字段和规则要变时先改本文，再改实现。
 
 ## 顶层结构
 
@@ -37,7 +40,7 @@ cp autotest.config.example.json autotest.config.json
 | 字段 | 类型 | 必填 | 默认值 | 作用 |
 |---|---|---|---|---|
 | [`target`](#target) | object | 是 | 无 | 被测应用的地址与路由 |
-| [`limits`](#limits) | object | 是 | 无 | 成本上限：用例数、总时长、单例步数 |
+| [`limits`](#limits) | object | 是 | 无 | 成本上限：用例数、总时长、单例步数（token / 金额预算另见 [`limits`](#limits)） |
 | [`runner`](#runner) | object | 是 | 无 | 执行器行为 |
 | [`output`](#output) | object | 否 | 见下文 | 报告、截图、inventory 的落盘目录 |
 | [`testsDir`](#testsdir) | string | 否 | `"test/"` | 生成测试文件的落盘目录 |
@@ -67,12 +70,12 @@ cp autotest.config.example.json autotest.config.json
 
 校验规则：
 
-- 必须是合法 URL；因为用 `new URL()` 解析，必须带协议和主机名。
+- 必须是合法 URL：带协议和主机名，能被标准 URL 解析器接受。
 - 协议只能是 `http:` 或 `https:`，`file:`、`ftp:` 等一律拒绝。
 - 不能带查询串（`?`）或 hash（`#`）——具体路由写在 `target.routes` 里。
 - 允许带路径前缀，如 `"https://example.com/app"`。
 - 前后空白会被去掉；结果统一去掉结尾 `/`，拼接路由时只在一处加。
-- 只写 `127.0.0.1:4173` 会解析失败，必须补 `http://`。
+- 只写 `127.0.0.1:4173` 不合法，必须补 `http://`。
 
 ### `target.routes`
 
@@ -96,6 +99,9 @@ cp autotest.config.example.json autotest.config.json
 
 成本上限：到限必须停并如实报告，不允许无限试错。必填对象，只允许下面 3 个字段，且**三个都必填**，没有默认值。
 
+这三个字段只封顶「这次跑多少」（用例数、时间、单例步数）；token 和金额预算不写在仓库配置里，
+来源见本节末尾的「与 README 的成本上限如何对应」。
+
 | 子字段 | 类型 | 必填 | 默认值 | 说明 |
 |---|---|---|---|---|
 | `maxCases` | integer | 是 | 无 | 单次任务最多生成多少条用例 |
@@ -108,6 +114,20 @@ cp autotest.config.example.json autotest.config.json
 - 必须是整数，小数会报「必须是整数」。
 - 必须 `>= 1`，`0` 和负数拒绝。
 - 没有上限值，但设得过大等于放弃兜底，按实际任务规模填写。
+
+### 与 README 的成本上限如何对应
+
+README 承诺「单次任务的时间、token、执行次数都要封顶」，各自的来源是：
+
+| README 的上限 | 由什么决定 |
+|---|---|
+| 时间 | `limits.maxWallMs` |
+| 执行次数 | `limits.maxCases` × `runner.repeat`（每条用例最多 `limits.maxSteps` 步） |
+| token / 金额预算 | 不在仓库配置里：发起任务时由调用方给定，随任务参数传入 |
+
+仓库配置只回答「这次跑多少」，预算只回答「这次最多花多少」；两者任一先到即停并如实报告。
+把预算放在任务参数而不是仓库配置里，是因为上限该由发起者定，被测试仓库不能给自己放宽，
+同一份配置也能在不同预算下复用。
 
 ## `runner`
 
@@ -160,7 +180,7 @@ cp autotest.config.example.json autotest.config.json
 ## 错误行为
 
 配置在任务开始前一次性校验。读不到文件、JSON 语法错误、字段缺失、类型不对、取值越界或出现未知字段，
-都会抛出 `ConfigError`，不会带着半份配置继续跑。错误信息格式为：
+都会抛出 `ConfigError`（规划中的错误类型），不会带着半份配置继续跑。错误信息格式为：
 
 ```
 配置错误 [字段路径]：原因
