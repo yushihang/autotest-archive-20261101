@@ -1,6 +1,7 @@
 {
   "baseUrl": "http://127.0.0.1:4173",
   "generatedAt": "2026-01-01T00:00:00.000Z",
+  "note": "手工构造的样例，不是一次真实探测的输出。#todo-1-toggle / #todo-1-delete 代表「已添加一条待办（买牛奶）之后」的页面状态；demo-app 初始列表为空（demo-app/app.js 里 todos = []），这两个选择器只在新增待办后才存在。",
   "routes": [
     {
       "path": "/",
@@ -82,7 +83,7 @@
     {
       "selector": "#todo-1-delete",
       "role": "button",
-      "name": "删除买牛奶",
+      "name": "删除：买牛奶",
       "kind": "button",
       "page": "/"
     }

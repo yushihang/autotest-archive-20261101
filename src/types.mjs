@@ -25,6 +25,9 @@
  * @property {string} name 可访问名：可见文案 / label / aria-label，用于生成用例标题
  * @property {ElementKind} kind 元素种类，决定能对它做哪些动作
  * @property {string} page 该元素所在的路由（以 '/' 开头，取自 target.routes）
+ * @property {string[]} [options] 仅 'select' 元素使用：候选 option 的 value，按 DOM 顺序。
+ *   探测阶段应对 select 元素填写；缺失时规划只生成「展开下拉框」的基础用例，
+ *   不会让这一类元素静默地一条用例都没有。
  * @property {boolean} [unstable] 选择器不稳定（如带自增 id / 随机 hash）时为 true，规划阶段应降权或跳过
  */
 

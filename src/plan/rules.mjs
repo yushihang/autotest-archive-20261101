@@ -600,25 +600,57 @@ const TEXTAREA_RULE = Object.freeze({
   ],
 });
 
+/**
+ * select 元素的候选值，来自契约里的 options（option 的 value）。
+ * 缺失或为空时返回空数组，规则改用「展开下拉框」的基础用例，
+ * 保证 ELEMENT_KINDS 里声明为可规划的 select 不会静默产出 0 条用例。
+ * @param {import('../types.mjs').InventoryElement} element
+ * @returns {string[]}
+ */
+export function selectValues(element) {
+  const options = element?.options;
+  if (!Array.isArray(options)) return [];
+  return options
+    .map((option) => {
+      if (typeof option === 'string') return option;
+      const value = /** @type {{ value?: unknown }} */ (option ?? {})?.value;
+      return typeof value === 'string' ? value : '';
+    })
+    .filter((value) => value.length > 0);
+}
+
 /** @type {PlanRule} */
 const SELECT_RULE = Object.freeze({
   id: 'select',
   dedupeAction: 'select',
-  when: (ctx) => {
-    const options = ctx.element?.options;
-    return Array.isArray(options) && options.length > 0;
+  priority: (ctx) => (ctx.semantic === 'list' ? 'P1' : 'P2'),
+  title: (ctx) => {
+    const values = selectValues(ctx.element);
+    return values.length > 0
+      ? `选择选项：「${labelOf(ctx.element)}」选中第一项「${values[0]}」`
+      : `展开下拉框：「${labelOf(ctx.element)}」`;
   },
-  priority: (ctx) => (ctx.element.kind === 'select' && ctx.semantic === 'list' ? 'P1' : 'P2'),
-  title: (ctx) => `选择选项：「${labelOf(ctx.element)}」`,
   steps: (ctx) => {
-    const first = ctx.element.options[0];
-    const value = typeof first === 'string' ? first : String(first?.value ?? '');
-    return [{ action: 'select', target: ctx.element.selector, value }];
+    const values = selectValues(ctx.element);
+    if (values.length === 0) return [clickStep(ctx.element)];
+    return [{
+      action: 'select',
+      target: ctx.element.selector,
+      value: values[0],
+    }];
   },
-  expect: (ctx) => [
-    `「${labelOf(ctx.element)}」可以选择选项并保留选中值`,
-    '选择后页面状态同步更新，没有报错',
-  ],
+  expect: (ctx) => {
+    if (selectValues(ctx.element).length === 0) {
+      return [
+        `「${labelOf(ctx.element)}」可以展开并显示候选选项`,
+        '展开后当前选中值保持不变，页面没有报错',
+      ];
+    }
+    return [
+      `「${labelOf(ctx.element)}」可以选择选项并保留选中值`,
+      '选择后页面状态同步更新，没有报错',
+    ];
+  },
 });
 
 /** @type {PlanRule} */
@@ -777,23 +809,22 @@ const DUPLICATE_ADD_RULE = Object.freeze({
 });
 
 /**
- * 删除最后一项：删除唯一一项后必须进入空态，而不是残留占位。
+ * 删除最后一项：页面上只剩一个可删除项时，删除后必须进入空态。
+ *
+ * 只有「唯一的删除按钮」才等价于「最后一项」：有多个删除按钮时，静态 Inventory
+ * 无法判断哪一个是最后一项，先新增再删除既有项只会让空态断言永远不成立。
  * @type {PlanRule}
  */
 const DELETE_LAST_RULE = Object.freeze({
   id: 'delete-last',
   dedupeAction: 'click:last',
-  when: (ctx) => isDelete(ctx.element) && isFirstMatching(ctx, isDelete),
+  when: (ctx) =>
+    isDelete(ctx.element) &&
+    isFirstMatching(ctx, isDelete) &&
+    pageElements(ctx).filter(isDelete).length === 1,
   priority: () => 'P1',
   title: (ctx) => `删除最后一项：删除「${labelOf(ctx.element)}」后检查空态`,
-  steps: (ctx) => {
-    const input = findAddInput(ctx);
-    const add = otherSiblings(ctx).find(isAdd);
-    const setup = input && add
-      ? [fillStep(input, sampleValue(input)), clickStep(add)]
-      : [];
-    return [...setup, clickStep(ctx.element)];
-  },
+  steps: (ctx) => [clickStep(ctx.element)],
   expect: () => [
     '删除最后一项后列表为空并显示空态',
     '页面没有报错，输入框仍可继续添加新项',
