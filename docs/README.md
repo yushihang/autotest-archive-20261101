@@ -4,7 +4,10 @@
 
 | 文档 | 内容 | 状态 |
 |---|---|---|
+| [`config.md`](config.md) | 配置文件的字段与校验规则 | 现行 |
+| [`dev.md`](dev.md) | 本地校验命令（`npm run lint`、`npm test`） | 现行 |
 | [`drills/token-budget-demo.md`](drills/token-budget-demo.md) | 一次 token 预算演练的过程与结果 | 已结束，仅存档 |
+| [`money-budget-demo.md`](money-budget-demo.md) | 一次预算演示：验收失败是否被如实上报 | 演示记录 |
 
 ## 本目录的约定
 
