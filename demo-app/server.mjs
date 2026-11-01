@@ -71,6 +71,17 @@ function sendText(res, status, text, contentType = 'text/plain; charset=utf-8') 
   res.end(text);
 }
 
+// Node 对 HEAD 请求会自动丢弃响应体，所以这里统一按 GET 写，HEAD 只拿到头部。
+function sendJson(res, status, payload) {
+  const body = JSON.stringify(payload);
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Content-Length': Buffer.byteLength(body),
+    'Cache-Control': 'no-store',
+  });
+  res.end(body);
+}
+
 function resolvePathname(requestUrl) {
   const pathname = decodeURIComponent((requestUrl || '/').split('?')[0]);
   const relative = pathname === '/' ? 'index.html' : pathname.replace(/^\/+/, '');
@@ -89,6 +100,13 @@ const server = createServer(async (req, res) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     res.setHeader('Allow', 'GET, HEAD');
     sendText(res, 405, 'Method Not Allowed');
+    return;
+  }
+
+  // 健康检查：编排与 runner 用它判断靶子是否就绪。
+  // 放在静态路径解析之前，这样即使 demo-app 目录里出现同名文件也不会遮蔽该端点。
+  if ((req.url || '/').split('?')[0] === '/health') {
+    sendJson(res, 200, { ok: true });
     return;
   }
 
