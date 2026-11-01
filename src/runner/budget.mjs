@@ -1,14 +1,17 @@
 /**
  * @file 执行预算：三条硬上限（总时长 / 用例数 / 单例步数）。
  *
- * 预算是执行器的刹车，不是建议值：任何一条先到就立即停，已经跑完的结果照常返回，
- * 没跑的部分在 `abortReason` 里写清楚停在哪、为什么停。判断「要不要再试一次」
- * 之前必须先问预算，不能等跑完再回头算账。
+ * 预算是执行器的刹车，不是建议值：总时长或用例数任何一条先到就立即停，已经跑完的结果
+ * 照常返回，没跑的部分在 `abortReason` 里写清楚停在哪、为什么停。单例步数超限只跳过
+ * 那一条用例，不拖垮整轮（见下文）。判断「要不要再试一次」之前必须先问预算，
+ * 不能等跑完再回头算账。
  *
  * 三种上限的分工：
  *   - maxWallMs：从 runPlan 开始计时，覆盖建 context、导航、点击、截图在内的全部耗时；
  *   - maxCases：最多开始多少条用例，超出的用例连浏览器都不打开；
- *   - maxSteps：单条用例最多多少步，步骤数超限的用例不执行——砍掉后半段会让断言失去意义。
+ *   - maxSteps：单条用例最多多少步。超限的那条用例整条不执行（砍掉后半段会让断言失去
+ *     意义），但**其余用例继续跑**：这是一条用例自己的问题，不该让整轮覆盖归零。
+ *     跳过的用例记在报告的 skipped 里，不当成中止。
  *
  * MVP 没有 LLM，token 预算不在这里；调用方给的 token / 金额上限属于任务参数，
  * 与这里的「这次跑多少」互不替代。
@@ -49,6 +52,14 @@ export class BudgetExceededError extends Error {
  */
 
 /**
+ * beginCase 的判定结果。skipReason 非 null 表示「只跳过这条用例」，而不是「整轮中止」。
+ *
+ * @typedef {object} CaseDecision
+ * @property {boolean} allowed 是否真的开跑
+ * @property {string | null} skipReason 跳过该用例的原因；为 null 且 allowed 为 false 时表示整轮中止
+ */
+
+/**
  * 把外部传入的上限规范化成非负整数；非法值回落到默认值。
  * @param {unknown} value
  * @param {number} fallback
@@ -76,7 +87,11 @@ function caseIdOf(testCase) {
  *
  *   const budget = new RunBudget(limits);
  *   for (const testCase of cases) {
- *     if (!budget.beginCase(testCase)) break;   // 超限，已自动记下原因
+ *     const decision = budget.beginCase(testCase);
+ *     if (!decision.allowed) {
+ *       if (decision.skipReason !== null) continue; // 单例超步数：跳过这条，接着跑下一条
+ *       break;                                      // 总时长 / 用例数：整轮中止
+ *     }
  *     ...
  *     budget.recordStep();
  *     budget.endCase();
@@ -108,6 +123,8 @@ export class RunBudget {
     this.casesStarted = 0;
     /** 已经完整跑完的用例数。 */
     this.casesCompleted = 0;
+    /** 因为步数超过 maxSteps 被整条跳过的用例数（不算中止）。 */
+    this.casesSkipped = 0;
     /** 已经执行过的步骤数，用于中止报告。 */
     this.stepsRun = 0;
 
@@ -145,37 +162,42 @@ export class RunBudget {
   }
 
   /**
-   * 开始一条用例前的闸门。返回 false 时预算已标记为中止，调用方必须立即退出。
+   * 开始一条用例前的闸门。返回值分三种情况：
+   *   - `{ allowed: true }`：正常开跑；
+   *   - `{ allowed: false, skipReason: '...' }`：这条用例自己超了步数上限，**跳过它，接着跑后面的**；
+   *   - `{ allowed: false, skipReason: null }`：总时长 / 用例数耗尽，预算已标记中止，整轮必须停。
+   *
    * @param {import('../types.mjs').TestCase} testCase
-   * @returns {boolean}
+   * @returns {CaseDecision}
    */
   beginCase(testCase) {
-    if (this.aborted) return false;
+    if (this.aborted) return { allowed: false, skipReason: null };
 
     if (this.remainingMs() <= 0) {
-      return this.abort(
-        'maxWallMs',
-        `用例 ${caseIdOf(testCase)} 开始前总时长预算已耗尽`,
-      );
+      this.abort('maxWallMs', `用例 ${caseIdOf(testCase)} 开始前总时长预算已耗尽`);
+      return { allowed: false, skipReason: null };
     }
 
     if (this.casesStarted >= this.maxCases) {
-      return this.abort(
+      this.abort(
         'maxCases',
         `用例 ${caseIdOf(testCase)} 未执行，已到用例数上限 ${this.maxCases} 条`,
       );
+      return { allowed: false, skipReason: null };
     }
 
     const stepCount = Array.isArray(testCase?.steps) ? testCase.steps.length : 0;
     if (stepCount > this.maxSteps) {
-      return this.abort(
-        'maxSteps',
-        `用例 ${caseIdOf(testCase)} 有 ${stepCount} 步，超过单例上限 ${this.maxSteps} 步，整条不执行`,
-      );
+      // 单例超限是这条用例自己的问题，不是整轮的中止条件：只跳它，后面的照跑。
+      this.casesSkipped += 1;
+      return {
+        allowed: false,
+        skipReason: `用例 ${caseIdOf(testCase)} 有 ${stepCount} 步，超过单例上限 ${this.maxSteps} 步，整条不执行`,
+      };
     }
 
     this.casesStarted += 1;
-    return true;
+    return { allowed: true, skipReason: null };
   }
 
   /** 记一步已经真正交给浏览器执行。 */
@@ -189,7 +211,8 @@ export class RunBudget {
   }
 
   /**
-   * 立刻中止，并记下原因。重复调用只保留第一次的原因。
+   * 立刻中止整轮执行，并记下原因。单例步数超限不走这里（见 beginCase）。
+   * 重复调用只保留第一次的原因。
    * @param {BudgetLimit} limit
    * @param {string} [detail]
    * @returns {false} 始终返回 false，方便 `return this.abort(...)`
@@ -203,7 +226,8 @@ export class RunBudget {
       maxSteps: `单条用例步骤上限 ${this.maxSteps} 步已超出`,
     }[limit];
 
-    const usage = `已执行 ${this.casesCompleted}/${this.casesStarted} 条用例、${this.stepsRun} 步，耗时 ${this.elapsedMs()}ms`;
+    const skipped = this.casesSkipped > 0 ? `（另跳过 ${this.casesSkipped} 条超步数用例）` : '';
+    const usage = `已执行 ${this.casesCompleted}/${this.casesStarted} 条用例${skipped}、${this.stepsRun} 步，耗时 ${this.elapsedMs()}ms`;
     this.aborted = true;
     this.abortLimit = limit;
     this.abortReason = `${label}${detail ? `：${detail}` : ''}；${usage}`;
@@ -212,7 +236,7 @@ export class RunBudget {
 
   /**
    * 预算快照，便于调用方把「这次允许跑多少」原样写进报告。
-   * @returns {{ maxWallMs: number, maxCases: number, maxSteps: number, elapsedMs: number, casesStarted: number, casesCompleted: number, stepsRun: number }}
+   * @returns {{ maxWallMs: number, maxCases: number, maxSteps: number, elapsedMs: number, casesStarted: number, casesCompleted: number, casesSkipped: number, stepsRun: number }}
    */
   snapshot() {
     return {
@@ -222,6 +246,7 @@ export class RunBudget {
       elapsedMs: this.elapsedMs(),
       casesStarted: this.casesStarted,
       casesCompleted: this.casesCompleted,
+      casesSkipped: this.casesSkipped,
       stepsRun: this.stepsRun,
     };
   }

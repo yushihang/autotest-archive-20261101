@@ -130,6 +130,8 @@
  * @property {string} actual 实际结果
  * @property {string[]} minimalRepro 可复现的最小步骤，命令或点击序列
  * @property {string} [screenshot] 截图文件路径，相对 output.dir
+ * @property {string[]} [consoleErrors] 页面 console 里 error 级的日志（最多保留前若干条）；
+ *   没有错误时省略该字段。actual 里有摘要，这里留原文供复核
  */
 
 /**
@@ -140,6 +142,8 @@
  * @property {RunStatus} status 汇总结论
  * @property {Attempt[]} attempts 每次尝试的明细，至少一条
  * @property {Evidence} evidence 失败证据；passed 时也要填，写清测了什么、看到了什么
+ * @property {boolean} [aborted] 这条用例因预算耗尽没能跑完全部尝试时为 true，此时 status 一定是 'error'；
+ *   跑完整轮时为 false 或省略。判定结论不能只看得分，先看它有没有被中止
  */
 
 /** @type {readonly Priority[]} */

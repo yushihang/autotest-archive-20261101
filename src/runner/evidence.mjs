@@ -294,8 +294,8 @@ export function buildEvidence(input) {
   };
 
   if (screenshot) evidence.screenshot = screenshot;
-  // 契约里没有 consoleErrors 字段，但「抓取 console 错误」必须落到产物里；
-  // 按「字段只增不改」的规则新开一个可选字段，不改旧字段语义。
+  // 契约里的可选字段（types.mjs 的 Evidence.consoleErrors）：actual 只放摘要，
+  // 原文留在这里供复核；没有错误时省略，避免制造一个空数组。
   if (consoleErrors.length > 0) evidence.consoleErrors = consoleErrors.slice();
 
   return evidence;

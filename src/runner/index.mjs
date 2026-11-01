@@ -6,7 +6,8 @@
  *   - 每条用例按 `runner.repeat` 跑多次，再按 retry.mjs 归因成 passed / failed / flaky；
  *   - 每次尝试都新建 BrowserContext（空 cookie / 空 storage / 屏蔽 Service Worker），
  *     上一条用例的登录态、localStorage、页面内存都无法污染下一条；
- *   - 每条尝试、每一步之前都问预算（budget.mjs），超限立即停，已跑完的结果照常返回；
+ *   - 每条尝试、每一步之前都问预算（budget.mjs）：总时长 / 用例数到顶立即停，已跑完的结果
+ *     照常返回；单例步数超限只跳过那一条用例，其余用例继续跑；
  *   - 失败时截图、抓 console、记录到失败那一步为止的最小复现步骤（evidence.mjs）。
  *
  * 关于断言：TestCase.expect 是写给人 review 的自然语言，执行器不从文字反推结论
@@ -20,7 +21,7 @@
 
 import { chromium } from 'playwright';
 
-import { DEFAULT_OUTPUT_DIR } from '../config.mjs';
+import { DEFAULT_OUTPUT_DIR, joinUrl } from '../config.mjs';
 import { RunBudget } from './budget.mjs';
 import {
   attachConsoleRecorder,
@@ -45,6 +46,7 @@ const SCREENSHOT_TIMEOUT_MS = 5_000;
  * @property {import('../types.mjs').RunResult[]} results 已完成的用例结果
  * @property {boolean} aborted 是否因预算/上限提前中止
  * @property {string | null} abortReason 中止原因；没中止时为 null
+ * @property {{ caseId: string, reason: string }[]} skipped 因超过 maxSteps 而整条跳过的用例（不算中止）
  * @property {string} baseUrl 规范化后的站点根地址
  * @property {{ maxWallMs: number, maxCases: number, maxSteps: number }} limits 本次生效的上限
  * @property {number} elapsedMs 总耗时
@@ -189,18 +191,27 @@ async function createIsolatedContext(browser, baseUrl) {
 
 /**
  * 把步骤里的 page（以 '/' 开头）拼到 baseUrl 上，并确认没有跑出站点。
+ *
+ * 拼接必须走 config.mjs 的 joinUrl：`new URL('/login', baseUrl)` 会按 origin 解析，
+ * 把 baseUrl 的路径前缀丢掉（`https://example.com/app` + `/login` → `https://example.com/login`），
+ * 与探测 / 规划存下的路由对不上。导出是为了让测试直接钉住带前缀的 baseUrl。
+ *
  * @param {string} baseUrl
  * @param {unknown} pagePath
  * @returns {string}
  */
-function toUrl(baseUrl, pagePath) {
+export function toUrl(baseUrl, pagePath) {
   const raw =
     typeof pagePath === 'string' && pagePath.trim() !== '' ? pagePath.trim() : '/';
+
+  if (!raw.startsWith('/')) {
+    throw new Error(`步骤里的地址必须以 '/' 开头（相对站点根），当前是：${raw}`);
+  }
 
   /** @type {URL} */
   let url;
   try {
-    url = new URL(raw, `${baseUrl}/`);
+    url = new URL(joinUrl(baseUrl, raw));
   } catch {
     throw new Error(`步骤里的地址不合法：${raw}`);
   }
@@ -587,6 +598,8 @@ export async function runPlanReport(plan, options = {}) {
 
   /** @type {import('../types.mjs').RunResult[]} */
   const results = [];
+  /** @type {{ caseId: string, reason: string }[]} 单例超步数被跳过的用例，不当成中止 */
+  const skipped = [];
   let aborted = false;
 
   const ownsBrowser = !options.browser;
@@ -595,7 +608,13 @@ export async function runPlanReport(plan, options = {}) {
 
   try {
     for (const testCase of cases) {
-      if (!budget.beginCase(testCase)) {
+      const decision = budget.beginCase(testCase);
+      if (!decision.allowed) {
+        // 单例超步数只跳过这一条；总时长 / 用例数耗尽才中止整轮。
+        if (decision.skipReason !== null) {
+          skipped.push({ caseId: testCase.id, reason: decision.skipReason });
+          continue;
+        }
         aborted = true;
         break;
       }
@@ -653,6 +672,7 @@ export async function runPlanReport(plan, options = {}) {
     results,
     aborted: aborted || budget.aborted,
     abortReason: budget.abortReason,
+    skipped,
     baseUrl,
     limits: {
       maxWallMs: budget.maxWallMs,
@@ -673,8 +693,11 @@ export async function runPlanReport(plan, options = {}) {
  *   const results = await runPlan(cases, { baseUrl, repeat, limits });
  *   results.aborted;    // boolean
  *   results.abortReason; // string | null
+ *   results.skipped;    // { caseId, reason }[]：单例超步数被整条跳过的用例
  *
- * 需要可序列化的完整报告时用 runPlanReport()。
+ * 单例步数（limits.maxSteps）超限的用例只跳过它自己，不中止整轮，也不会出现在 results 里，
+ * 所以读结果时必须看 `skipped`：只数数组长度会以为这条用例凭空消失了。
+ * 需要可序列化的完整报告（含预算账本）时用 runPlanReport()。
  *
  * @param {import('../types.mjs').TestCase[] | { cases: import('../types.mjs').TestCase[] }} plan
  * @param {{
@@ -687,7 +710,7 @@ export async function runPlanReport(plan, options = {}) {
  *   cwd?: string,
  *   browser?: import('playwright').Browser,
  * }} options
- * @returns {Promise<import('../types.mjs').RunResult[] & { aborted: boolean, abortReason: string | null }>}
+ * @returns {Promise<import('../types.mjs').RunResult[] & { aborted: boolean, abortReason: string | null, skipped: { caseId: string, reason: string }[] }>}
  */
 export async function runPlan(plan, options = {}) {
   const report = await runPlanReport(plan, options);
@@ -704,8 +727,13 @@ export async function runPlan(plan, options = {}) {
     enumerable: false,
     configurable: false,
   });
+  Object.defineProperty(results, 'skipped', {
+    value: report.skipped,
+    enumerable: false,
+    configurable: false,
+  });
 
-  return /** @type {import('../types.mjs').RunResult[] & { aborted: boolean, abortReason: string | null }} */ (
+  return /** @type {import('../types.mjs').RunResult[] & { aborted: boolean, abortReason: string | null, skipped: { caseId: string, reason: string }[] }} */ (
     results
   );
 }

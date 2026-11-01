@@ -16,6 +16,21 @@ export const DEFAULT_TESTS_DIR = 'test/';
 export const DEFAULT_OUTPUT_DIR = 'autotest-output';
 
 /**
+ * baseUrl 与路由拼接：baseUrl 已去掉结尾 '/'（见 normalizeBaseUrl），路由以 '/' 开头。
+ *
+ * 探测与执行必须共用这一处拼接。不能用 `new URL(route, baseUrl)`：它按 origin 解析根相对
+ * 路径，会把 baseUrl 的路径前缀整段丢掉（`https://example.com/app` + `/login` 变成
+ * `https://example.com/login`），挂在子路径下的应用会被打开到错误页面。
+ *
+ * @param {string} baseUrl 站点根地址，不带结尾 '/'
+ * @param {string} routePath 以 '/' 开头的路由
+ * @returns {string}
+ */
+export function joinUrl(baseUrl, routePath) {
+  return routePath === '/' ? `${baseUrl}/` : `${baseUrl}${routePath}`;
+}
+
+/**
  * 各层允许出现的字段。多写一个键就报错，避免拼写错误被静默忽略。
  * @type {readonly string[]}
  */
