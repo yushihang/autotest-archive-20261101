@@ -22,12 +22,32 @@ listening on http://127.0.0.1:4173
 也可以直接用浏览器打开 `demo-app/index.html`（`file://` 下行为一致）。
 
 服务默认只监听 `127.0.0.1`；runner 与浏览器分容器 / 分 network namespace 时用 `--host 0.0.0.0`。
-`GET /health`（忽略查询串）固定返回 `200` + `{"ok":true}`，供编排与测试判断靶子是否就绪；
-该端点优先于静态文件解析，即使目录内存在同名文件也不会被遮蔽。
 
 只提供 `demo-app/` 目录内的静态文件；`GET` / `HEAD` 之外的方法返回 405，路径越界返回 403，
 请求路径无法解码返回 400，找不到文件返回 404，其他文件系统错误（如权限不足）返回 500 并在 stderr 留一行日志。
 收到 `SIGINT` / `SIGTERM` 时先停止接受新连接、断开空闲的 keep-alive 连接，最多 1s 后强制退出。
+
+## 健康检查
+
+`GET /health` 供编排与 runner 判断靶子是否就绪。它优先于静态文件解析，即使 `demo-app/` 内存在同名文件也不会被遮蔽；查询串被忽略，`/health?ts=1` 与 `/health` 等价。
+
+```bash
+curl -sS http://127.0.0.1:4173/health
+```
+
+```
+{"ok":true}
+```
+
+| 项 | 值 |
+| --- | --- |
+| 状态码 | `200` |
+| `Content-Type` | `application/json; charset=utf-8` |
+| `Content-Length` | `11` |
+| `Cache-Control` | `no-store` |
+| 响应体 | `{"ok":true}`（无缩进、无结尾换行） |
+
+`HEAD /health` 返回同样的头部但没有响应体，适合只看状态码的探针；其他方法（如 `POST`）返回 `405`，并带 `Allow: GET, HEAD`。
 
 ## 页面行为
 
