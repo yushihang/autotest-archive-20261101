@@ -42,6 +42,7 @@ node --check scripts/check.mjs && node scripts/check.mjs
 - `tests/report-markdown.test.mjs`——Markdown 报告：覆盖清单按优先级、未覆盖原因、失败证据、flaky 单列、时间与步数用量。
 - `tests/pr-guard.test.mjs`——PR 护栏：`testsDir` 之外的文件一律拦住，前缀相似路径、越界路径、强制跳过参数都不放行。
 - `tests/pr-create.test.mjs`——PR 拼装：时间戳 runId、`autotest/<runId>` 分支名、标题格式、正文里的覆盖清单 / 未覆盖原因 / 失败证据。
+- `tests/pr-create-git.test.mjs`——PR 的环境检查：在临时仓库里验证嵌套 `output.dir` 的未跟踪产物不会被当成「工作区不是干净的」。
 - `tests/cli-args.test.mjs`——CLI 参数：默认 dry-run、`--pr` 才碰 git、`--dry-run` 与 `--pr` 互斥、未知参数不静默忽略。
 
 这些是**单元测试，不启动浏览器**。`@playwright/test` 在这里只当测试运行器用，所以装完依赖就能跑，不需要额外 `npx playwright install` 下载浏览器。

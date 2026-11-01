@@ -369,11 +369,20 @@ function isInsideDir(path, dir) {
  * 用 `-z` 读：默认格式对含空格的文件名加引号，对重命名写 `old -> new`，
  * 两种都会让路径和真实文件对不上，护栏就可能放错人。
  *
+ * 用 `--untracked-files=all`：默认的 `normal` 会把整个未跟踪目录折叠成一条
+ * `dir/`。output.dir 一旦嵌套（例如 `autotest-output/verify-mvp`，`scripts/verify-mvp.sh`
+ * 就是这么用的），折叠出来的 `autotest-output/` 既不等于白名单根也不以它开头，
+ * 工具自己的产物就会被当成「工作区不是干净的」，--pr 直接拒绝运行。
+ * 展开成具体文件后，每条路径都能和白名单逐条比对，不依赖「output.dir 必须在顶层」。
+ *
  * @param {string} cwd
  * @returns {string[]}
  */
 function gitStatusPaths(cwd) {
-  const raw = exec('git', ['status', '--porcelain=v1', '-z'], { cwd, trim: false });
+  const raw = exec('git', ['status', '--porcelain=v1', '-z', '--untracked-files=all'], {
+    cwd,
+    trim: false,
+  });
   if (raw === '') return [];
 
   /** @type {string[]} */
@@ -391,6 +400,20 @@ function gitStatusPaths(cwd) {
     if (status.includes('R') || status.includes('C')) index += 1;
   }
   return paths;
+}
+
+/**
+ * 工作区里除 output.dir 产物之外的改动路径。
+ *
+ * 抽成函数是为了让「嵌套 output.dir 不算脏」这条能被测到：折叠路径的问题出在
+ * gitStatusPaths 的展开方式上，只测 isInsideDir 永远测不出来。
+ *
+ * @param {string} cwd
+ * @param {string | undefined} outputDir 本工具的产物目录（相对仓库根）
+ * @returns {string[]} 相对仓库根、`/` 分隔的路径
+ */
+export function changedPaths(cwd, outputDir) {
+  return gitStatusPaths(cwd).filter((path) => !isInsideDir(path, outputDir));
 }
 
 /**
@@ -446,6 +469,8 @@ export async function createPullRequest(options) {
   const testsDir = options.testsDir;
   // 本工具自己写的产物（inventory / 截图 / report / specs）。如果目标仓库没把 output.dir
   // 加进 .gitignore，它们会出现在 git status 里；这些是产物不是业务改动，不该让 guard 误报。
+  // output.dir 允许嵌套（`autotest-output/verify-mvp`），gitStatusPaths 用 -uall 展开目录，
+  // 所以嵌套目录里的产物同样能逐条匹配上白名单。
   const outputDir = options.outputDir;
 
   // ------------------------------------------------------------ 1. 环境检查
@@ -455,7 +480,7 @@ export async function createPullRequest(options) {
     throw new PrError('--pr 需要在 git 仓库里运行', { cause });
   }
 
-  const dirty = gitStatusPaths(cwd).filter((path) => !isInsideDir(path, outputDir));
+  const dirty = changedPaths(cwd, outputDir);
   if (dirty.length > 0) {
     throw new PrError(
       [
@@ -522,10 +547,7 @@ export async function createPullRequest(options) {
   exec('git', ['add', '--', ...copied.files], { cwd });
 
   // 提交前护栏：工作区里除了刚复制的测试文件，不允许有别的东西。
-  assertOnlyTests(
-    gitStatusPaths(cwd).filter((path) => !isInsideDir(path, outputDir)),
-    testsDir,
-  );
+  assertOnlyTests(changedPaths(cwd, outputDir), testsDir);
 
   exec('git', ['commit', '-m', title], { cwd });
 
