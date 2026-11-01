@@ -110,7 +110,7 @@ PR 里**只有测试**。业务代码一行都不改。
 
 ## 快速开始
 
-> 当前为设计阶段，以下为目标用法；已经能跑的是配置校验（`npm test`），仓库里还有一个零依赖的演示靶子 [demo-app](demo-app/README.md)，见「现状」。
+> 已经能跑的是完整流水线：`./scripts/verify-mvp.sh` 会用零依赖的演示靶子 [demo-app](demo-app/README.md) 跑一遍 dry-run 并给出报告。人工验收清单见 [docs/mvp-acceptance.md](docs/mvp-acceptance.md)。
 
 ### 安装
 
@@ -118,7 +118,7 @@ PR 里**只有测试**。业务代码一行都不改。
 
 克隆仓库即可获取本项目：`git clone <仓库地址>`。
 
-拿到代码后：`npm install`，`npm test` 跑单元测试。直接依赖的版本已写死，但仓库还**没有提交 `package-lock.json`**——锁文件要由 `npm install` 生成，装好后请一并提交，否则「可复现」只覆盖直接依赖、传递依赖每次安装仍重解析。
+拿到代码后：`npm install`，`npm test` 跑单元测试，`./scripts/verify-mvp.sh` 做一次端到端验收。直接依赖的版本已写死，但仓库还**没有提交 `package-lock.json`**——锁文件要由 `npm install` 生成，装好后请一并提交，否则「可复现」只覆盖直接依赖、传递依赖每次安装仍重解析。
 
 ### 试一试演示靶子
 
@@ -134,19 +134,26 @@ node demo-app/server.mjs
 
 配置文件（被测地址、成本上限、输出目录）的字段与校验规则见 [docs/config.md](docs/config.md)，完整示例见 `autotest.config.example.json`。
 
-### 发起一次任务（目标用法）
+### 发起一次任务
 
 1. **准备权限**：按「权限与安全」建一个最小权限 token——能建分支、能开 PR，不能直接推主分支；目标仓库开启分支保护，自动 PR 必须走人工 review。
 2. **准备环境**：执行环境与宿主机隔离，业务代码只读，不挂载敏感目录。
-3. **发起任务**：指向目标仓库，说明要补测试的范围。触发方式是命令行手动跑还是挂在 CI 里，尚未确定（见「现状」）。
+3. **发起任务**：
 
-跑完你会拿到一个新分支上的 PR：只有测试文件，加上覆盖了什么、为什么选这些。
+   ```bash
+   node src/cli.mjs run --config autotest.config.json            # 默认 dry-run：只写本地产物
+   node src/cli.mjs run --config autotest.config.json --pr       # 建分支 autotest/<runId> 并开 PR
+   ```
+
+   `--pr` 只会在工作区干净时开始，push 前强制经过 `src/pr/guard.mjs` 的护栏；只要改动里出现 `testsDir` 之外的文件就中止，没有强制跳过开关。
+
+跑完你会拿到一个新分支上的 PR：只有测试文件，加上覆盖了什么、为什么选这些。dry-run 则只留下 `output.dir` 下的 inventory、specs、截图和 `report.md`。
 
 ## 开发
 
 ### 技术栈
 
-- **运行时**：Node.js >=20（`package.json` 的 `engines.node` 已声明），原生 ESM（`.mjs`）。**没有编译步骤**——不引入 tsc / babel / 打包器，模块用 `node` 直接跑（CLI 入口还没写，现在还只有 `src/config.mjs`、`src/types.mjs` 两个模块）。
+- **运行时**：Node.js >=20（`package.json` 的 `engines.node` 已声明），原生 ESM（`.mjs`）。**没有编译步骤**——不引入 tsc / babel / 打包器，模块用 `node` 直接跑，入口是 `src/cli.mjs`。
 - **浏览器自动化**：Playwright，版本在 `package.json` 里写死精确版本号（不用 `^` / `~`）；测试侧用 `@playwright/test`。
 - **类型**：不写 TypeScript。三个契约用 JSDoc `@typedef` 定在 `src/types.mjs`，编辑器里照样有补全，运行时零开销。
 - **模块协作**：模块之间只交换 JSON——探测产出 `Inventory`，规划产出 `TestCase[]`，执行产出 `RunResult`。契约先定死，各模块才写得通。
@@ -154,27 +161,34 @@ node demo-app/server.mjs
 
 ### 目录结构
 
-- `src/`——运行时模块：`config.mjs`（配置加载与校验）、`types.mjs`（共享契约）、`probe/`（探测）、`plan/`（规划）、`runner/`（执行）、`generate/`（生成 spec）、`report/`（Markdown 报告）、`views.mjs`（产物视图）。
+- `src/`——运行时模块：`cli.mjs`（编排入口）、`config.mjs`（配置加载与校验）、`types.mjs`（共享契约）、`probe/`（探测）、`plan/`（规划）、`runner/`（执行）、`generate/`（生成 spec）、`report/`（Markdown 报告）、`pr/`（PR 护栏与创建）、`views.mjs`（产物视图）。
+- `scripts/`——`check.mjs`（语法检查）、`verify-mvp.sh`（本地一键验收）。
 - `tests/`——单元测试。
 - `demo-app/`——零依赖演示靶子（登录 + 待办）。
-- `docs/`——[配置说明](docs/config.md)、[开发命令](docs/dev.md)、[契约验证](docs/testing.md)、[失败上报演示](docs/money-budget-demo.md)。
+- `docs/`——[配置说明](docs/config.md)、[开发命令](docs/dev.md)、[契约验证](docs/testing.md)、[MVP 验收清单](docs/mvp-acceptance.md)、[失败上报演示](docs/money-budget-demo.md)。
 
 ### 现状
 
-MVP 进行中。骨架和契约已经定死；配置、探测、规划、执行、生成测试代码与 Markdown 报告已经落地，提 PR 与 CLI 入口还没做。
+MVP 已能端到端跑通：一条命令完成探测 → 规划 → 执行 → 生成测试代码 → 报告；`--pr` 模式会建分支、开 PR，并在 push 前强制通过「PR 里只有测试」的护栏。验收步骤见 [docs/mvp-acceptance.md](docs/mvp-acceptance.md)。
+
+```bash
+npm install
+./scripts/verify-mvp.sh   # 起 demo 靶子 + CLI dry-run，退出码 0 即通过
+```
 
 已完成：
 
 - [x] 项目骨架：`package.json`（ESM、无编译步骤）与三个共享契约 `Inventory` / `TestCase` / `RunResult`，见 `src/types.mjs`。
 - [x] 配置：`src/config.mjs` 的 `loadConfig()` 读 JSON、校验并规范化，缺字段时报错带字段名；完整示例见 `autotest.config.example.json`。
-- [x] 测试：`npm test`（`playwright test`，不开浏览器）覆盖配置校验的每条错误分支与契约常量，用例在 `tests/`。
+- [x] 测试：`npm test`（`playwright test`，不开浏览器）覆盖配置校验、契约常量、执行预算、生成器与报告格式。
 
 模块进度（各自一个 issue）：
 
 - [x] 探测：给 `baseUrl` + `routes`，产出 `Inventory`。
 - [x] 规划：从 `Inventory` 推出 `TestCase[]`，按 P0 / P1 / P2 排序。
 - [x] 执行：在 Playwright 里跑，产出 `RunResult` 并留下证据（输入、期望、实际、最小复现、截图）。
-- [ ] 生成与提 PR：`src/generate/` 已经把通过的用例落成 `specs/<module>.spec.mjs`，`src/report/` 产出 `report.md`；把产物写进目标仓库的 `testsDir` 并提 PR 还没做。
+- [x] 生成与报告：`src/generate/` 把通过的用例落成 `specs/<module>.spec.mjs`，`src/report/` 产出 `report.md`。
+- [x] 编排与提 PR：`node src/cli.mjs run --config <path> [--dry-run|--pr]`；默认 dry-run 只写本地，`--pr` 才建分支、提交、开 PR，push 前由 `src/pr/guard.mjs` 保证改动全在 `testsDir` 下。
 
 ### 下一步要定的事
 
@@ -192,6 +206,7 @@ MVP 进行中。骨架和契约已经定死；配置、探测、规划、执行�
 详细文档都在 `docs/` 下，按用途分：
 
 - [docs/config.md](docs/config.md)——配置文件说明：被测地址、成本上限、输出目录的字段与校验规则。
+- [docs/mvp-acceptance.md](docs/mvp-acceptance.md)——MVP 人工验收清单：一键脚本、`--pr` 的 diff 检查、报告证据、已知不支持项。
 - [docs/dev.md](docs/dev.md)——开发命令：本地怎么查语法、怎么跑测试。
 - [docs/testing.md](docs/testing.md)——契约验证：没有 Node 时怎么静态检查三个契约，有 Node 时怎么跑 lint 和 test。
 - [docs/money-budget-demo.md](docs/money-budget-demo.md)——预算演示：失败场景下结果如何如实上报。
