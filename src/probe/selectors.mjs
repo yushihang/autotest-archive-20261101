@@ -27,6 +27,7 @@
  * @property {string} [name] 可访问名（可见文案 / label / aria-label，已折叠空白）
  * @property {string} [kind] 元素种类，页面侧推导，这里只做白名单校验
  * @property {string} [path] DOM 路径选择器，最后兜底用
+ * @property {string[]} [options] select 元素候选 option 的 value，按 DOM 顺序
  */
 
 /**
@@ -418,6 +419,11 @@ export function toInventoryElement(facts, page, index) {
     kind: normalizeKind(facts?.kind),
     page,
   };
+
+  // 契约里 options 只对 select 有意义：为空时省略字段，别用空数组占位。
+  if (Array.isArray(facts?.options) && facts.options.length > 0) {
+    element.options = facts.options;
+  }
 
   // 契约里 unstable 是可选项：稳定就不写这个字段，别用 false 占位。
   if (isUnstableSelector(facts, source, selector, index)) {

@@ -113,7 +113,7 @@ export async function probe(config, options = {}) {
       logger.info?.(`探测 ${url}`);
 
       // 导航 + networkidle 共用这一点预算：两条都拿满会让单条路由花掉 2× timeout。
-      const response = await gotoOrThrow(page, url, timeout, 'load', deadline);
+      const response = await gotoOrThrow(page, url, timeout, 'load', deadline, logger);
 
       // 标题与采集各受 pageTimeoutMs 约束；万一这步把预算花超了，
       // 路由结束和写文件前的 remainingBudget 检查会抛错，不会静默成功。
@@ -462,6 +462,8 @@ function collectFacts(args) {
     const role = roleOf(element);
     const { testId, testIdAttr } = readTestId(element);
 
+    const options = tag === 'select' ? Array.from(element.options, (option) => option.value) : undefined;
+
     elements.push({
       tag,
       testId,
@@ -472,6 +474,7 @@ function collectFacts(args) {
       name: accessibleNameOf(element),
       kind: kindOf(element, role),
       path: domPathOf(element),
+      ...(options === undefined || options.length === 0 ? {} : { options }),
     });
   }
 
@@ -527,7 +530,7 @@ async function launchBrowser() {
  * @param {number} deadline 总预算的截止时间戳
  * @returns {Promise<import('playwright').Response | null>}
  */
-async function gotoOrThrow(page, url, timeout, waitUntil, deadline) {
+async function gotoOrThrow(page, url, timeout, waitUntil, deadline, logger) {
   /** @type {import('playwright').Response | null} */
   let response;
 
@@ -540,8 +543,13 @@ async function gotoOrThrow(page, url, timeout, waitUntil, deadline) {
   }
 
   // 网络空闲只用来等 SPA 渲染完，等不到也不算错：DOM 已经拿到了。
-  const remaining = Math.max(0, Math.min(routeDeadline - Date.now(), remainingBudget(deadline, url)));
-  await page.waitForLoadState('networkidle', { timeout: remaining }).catch(() => {});
+  const remaining = Math.min(routeDeadline - Date.now(), remainingBudget(deadline, url));
+  // Playwright treats timeout: 0 as "no timeout", so an exhausted budget must skip the wait.
+  if (remaining > 0) {
+    await page.waitForLoadState('networkidle', { timeout: remaining }).catch(() => {
+      logger.warn?.(`等待 ${url} 网络空闲超时，继续采集已渲染的 DOM`);
+    });
+  }
 
   return response;
 }

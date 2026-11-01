@@ -389,6 +389,22 @@ test.describe('toInventoryElement', () => {
     expect(element).not.toHaveProperty('unstable');
   });
 
+  test('select 元素透传候选 option 的 value', () => {
+    const facts = { tag: 'select', attrName: 'priority', name: '优先级', kind: 'select', options: ['p0', 'p1'] };
+    const index = buildSelectorIndex([facts]);
+
+    const element = toInventoryElement(facts, '/', index);
+
+    expect(element.options).toEqual(['p0', 'p1']);
+  });
+
+  test('空 options 不写字段', () => {
+    const facts = { tag: 'select', attrName: 'priority', name: '优先级', kind: 'select', options: [] };
+    const index = buildSelectorIndex([facts]);
+
+    expect(toInventoryElement(facts, '/', index)).not.toHaveProperty('options');
+  });
+
   test('只有大小写不同的两个 name 都会被标成 unstable', () => {
     // 选择器是 role=link[name="Home"i]，两个元素都会命中同一个选择器，
     // 所以必须标 unstable，不能让下游拿到一个必挂的 strict mode 用例。
