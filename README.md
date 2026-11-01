@@ -157,7 +157,7 @@ node demo-app/server.mjs
 - `src/`——运行时模块，当前有 `config.mjs`（配置加载与校验）和 `types.mjs`（共享契约）。
 - `tests/`——单元测试。
 - `demo-app/`——零依赖演示靶子（登录 + 待办）。
-- `docs/`——[配置说明](docs/config.md)、[失败上报演示](docs/money-budget-demo.md)。
+- `docs/`——[配置说明](docs/config.md)、[开发命令](docs/dev.md)、[失败上报演示](docs/money-budget-demo.md)。
 
 ### 现状
 
@@ -186,6 +186,14 @@ MVP 进行中。骨架和契约已经定死，探测 / 规划 / 执行还没写�
 ### 贡献
 
 欢迎提交 issue 和 PR。
+
+## 文档
+
+详细文档都在 `docs/` 下，按用途分：
+
+- [docs/config.md](docs/config.md)——配置文件说明：被测地址、成本上限、输出目录的字段与校验规则。
+- [docs/dev.md](docs/dev.md)——开发命令：本地怎么查语法、怎么跑测试。
+- [docs/money-budget-demo.md](docs/money-budget-demo.md)——预算演示：失败场景下结果如何如实上报。
 
 ## 许可
 
