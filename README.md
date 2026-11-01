@@ -23,8 +23,7 @@ PR 里**只有测试**。业务代码一行都不改。
 
 ## 快速开始
 
-> 当前为设计阶段，以下为目标用法；尚未有可用的 CLI，仓库里能跑起来的只有一个演示靶子
-> [demo-app](demo-app/README.md)，见「现状」。
+> 当前为设计阶段，以下为目标用法；已经能跑的是配置校验（`npm test`），仓库里还有一个零依赖的演示靶子 [demo-app](demo-app/README.md)，见「现状」。
 
 1. **准备权限**：按「权限与安全」建一个最小权限 token——能建分支、能开 PR，不能直接推主分支；目标仓库开启分支保护，自动 PR 必须走人工 review。
 2. **准备环境**：执行环境与宿主机隔离，业务代码只读，不挂载敏感目录。
@@ -113,10 +112,11 @@ PR 里**只有测试**。业务代码一行都不改。
 
 ## 技术栈
 
-- **运行时**：Node.js ≥ 20，原生 ESM（`.mjs`）。**没有编译步骤**——不引入 tsc / babel / 打包器，`node src/cli.mjs` 直接跑。
+- **运行时**：Node.js ≥ 20，原生 ESM（`.mjs`）。**没有编译步骤**——不引入 tsc / babel / 打包器，模块用 `node` 直接跑（CLI 入口还没写，现在还只有 `src/config.mjs`、`src/types.mjs` 两个模块）。
 - **浏览器自动化**：Playwright，版本在 `package.json` 里写死精确版本号（不用 `^` / `~`）；测试侧用 `@playwright/test`。
 - **类型**：不写 TypeScript。三个契约用 JSDoc `@typedef` 定在 `src/types.mjs`，编辑器里照样有补全，运行时零开销。
 - **模块协作**：模块之间只交换 JSON——探测产出 `Inventory`，规划产出 `TestCase[]`，执行产出 `RunResult`。契约先定死，各模块才写得通。
+- **测试**：`npm test` 跑 `tests/` 下的单元测试（`playwright test`，不开浏览器）。当前覆盖配置校验的所有错误分支和契约常量。
 
 ## 现状
 
@@ -126,6 +126,7 @@ MVP 进行中。骨架和契约已经定死，探测 / 规划 / 执行还没写�
 
 - [x] 项目骨架：`package.json`（ESM、无编译步骤）与三个共享契约 `Inventory` / `TestCase` / `RunResult`，见 `src/types.mjs`。
 - [x] 配置：`src/config.mjs` 的 `loadConfig()` 读 JSON、校验并规范化，缺字段时报错带字段名；完整示例见 `autotest.config.example.json`。
+- [x] 测试：`npm test`（`playwright test`，不开浏览器）覆盖配置校验的每条错误分支与契约常量，用例在 `tests/`。
 
 仓库里现有可运行 / 可阅读的东西：
 
@@ -162,6 +163,8 @@ MVP 进行中。骨架和契约已经定死，探测 / 规划 / 执行还没写�
 ## 安装
 
 克隆仓库即可获取本项目：`git clone <仓库地址>`。
+
+拿到代码后：`npm install`，`npm test` 跑单元测试。直接依赖的版本已写死，但仓库还**没有提交 `package-lock.json`**——锁文件要由 `npm install` 生成，装好后请一并提交，否则「可复现」只覆盖直接依赖、传递依赖每次安装仍会重解析。
 
 ## 常见问题
 

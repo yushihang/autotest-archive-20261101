@@ -16,6 +16,20 @@ export const DEFAULT_TESTS_DIR = 'test/';
 export const DEFAULT_OUTPUT_DIR = 'autotest-output';
 
 /**
+ * 各层允许出现的字段。多写一个键就报错，避免拼写错误被静默忽略。
+ * @type {readonly string[]}
+ */
+const TOP_LEVEL_KEYS = ['target', 'limits', 'runner', 'output', 'testsDir'];
+/** @type {readonly string[]} */
+const TARGET_KEYS = ['baseUrl', 'routes'];
+/** @type {readonly string[]} */
+const LIMITS_KEYS = ['maxCases', 'maxWallMs', 'maxSteps'];
+/** @type {readonly string[]} */
+const RUNNER_KEYS = ['repeat'];
+/** @type {readonly string[]} */
+const OUTPUT_KEYS = ['dir'];
+
+/**
  * 配置错误。field 一定是出错字段的点路径，例如 'limits.maxCases'、'target.routes[0]'。
  */
 export class ConfigError extends Error {
@@ -45,14 +59,14 @@ export class ConfigError extends Error {
  * @property {number} repeat 每条用例跑几次用于判 flaky（>= 1）
  *
  * @typedef {object} OutputConfig 产物
- * @property {string} dir 报告 / 截图 / inventory 的落盘目录，不带结尾 '/'
+ * @property {string} dir 报告 / 截图 / inventory 的落盘目录，仓库内相对路径，不带结尾 '/'
  *
  * @typedef {object} AutotestConfig 规范化后的配置
  * @property {TargetConfig} target
  * @property {LimitsConfig} limits
  * @property {RunnerConfig} runner
  * @property {OutputConfig} output
- * @property {string} testsDir 生成的测试文件落盘目录，以 '/' 结尾
+ * @property {string} testsDir 生成的测试文件落盘目录，仓库内相对路径，以 '/' 结尾
  */
 
 /**
@@ -97,16 +111,19 @@ export function loadConfig(path) {
  *
  * @param {unknown} input
  * @returns {AutotestConfig}
- * @throws {ConfigError}
+ * @throws {ConfigError} 字段缺失、类型不对、取值越界或出现未知字段时抛出
  */
 export function normalizeConfig(input) {
   if (!isPlainObject(input)) {
     throw new ConfigError('config', `根节点必须是 JSON 对象，当前是 ${describe(input)}`);
   }
 
-  requireObject(input, 'target');
-  requireObject(input, 'limits');
-  requireObject(input, 'runner');
+  // 未知字段一律报错：拼错的可选字段（testsdir / outp）会被静默忽略并回落到默认值，
+  // 而 testsDir 和 output.dir 决定文件写到哪里，跑偏了比直接报错难查得多。
+  rejectUnknownKeys(input, '', TOP_LEVEL_KEYS);
+  rejectUnknownKeys(requireObject(input, 'target'), 'target', TARGET_KEYS);
+  rejectUnknownKeys(requireObject(input, 'limits'), 'limits', LIMITS_KEYS);
+  rejectUnknownKeys(requireObject(input, 'runner'), 'runner', RUNNER_KEYS);
 
   const baseUrl = normalizeBaseUrl('target.baseUrl', readString(input, 'target.baseUrl'));
   const routes = normalizeRoutes(readStringArray(input, 'target.routes'));
@@ -118,8 +135,11 @@ export function normalizeConfig(input) {
 
   // output 整体可以不写，此时 output.dir 走默认值；写了就必须是对象。
   const outputNode = getIn(input, 'output');
-  if (outputNode !== undefined && !isPlainObject(outputNode)) {
-    throw new ConfigError('output', `必须是对象，当前是 ${describe(outputNode)}`);
+  if (outputNode !== undefined) {
+    if (!isPlainObject(outputNode)) {
+      throw new ConfigError('output', `必须是对象，当前是 ${describe(outputNode)}`);
+    }
+    rejectUnknownKeys(outputNode, 'output', OUTPUT_KEYS);
   }
   const outputDir = normalizeDir(
     'output.dir',
@@ -173,6 +193,22 @@ function getIn(root, field) {
     (current, key) => (isPlainObject(current) ? current[key] : undefined),
     /** @type {unknown} */ (root),
   );
+}
+
+/**
+ * 拒绝白名单之外的字段。field 为空串时表示根节点。
+ * @param {Record<string, any>} node
+ * @param {string} field 当前对象的字段路径，根节点传 ''
+ * @param {readonly string[]} allowed 允许出现的字段
+ * @returns {void}
+ */
+function rejectUnknownKeys(node, field, allowed) {
+  for (const key of Object.keys(node)) {
+    if (allowed.includes(key)) continue;
+    const path = field === '' ? key : `${field}.${key}`;
+    const scope = field === '' ? '' : `${field} 下`;
+    throw new ConfigError(path, `未知字段（${scope}只支持 ${allowed.join(' / ')}）`);
+  }
 }
 
 /**
@@ -317,6 +353,11 @@ function normalizeRoutes(routes) {
 
 /**
  * 目录规范化：去掉开头的 './'，结尾斜杠按 keepTrailingSlash 统一。
+ *
+ * 只接受仓库内的相对路径。生成的测试文件会落到这个目录里，而这个工具的边界是
+ * 「只加测试文件、不碰别处」，所以 '/etc/foo' 和 '../x' 这类会写到仓库外的路径必须拒绝，
+ * 不能把这条边界交给配置拼写。
+ *
  * @param {string} field
  * @param {string} raw
  * @param {{ keepTrailingSlash: boolean }} options
@@ -326,6 +367,13 @@ function normalizeDir(field, raw, options) {
   const cleaned = raw.replace(/^\.\//, '').replace(/\/+$/, '');
   if (cleaned === '' || cleaned === '.') {
     throw new ConfigError(field, `不能是根目录或当前目录，当前是 "${raw}"`);
+  }
+  // 绝对路径：Unix 的 '/'、Windows 的 '\' 和 'C:' 盘符都算。
+  if (/^[/\\]/.test(cleaned) || /^[a-zA-Z]:/.test(cleaned)) {
+    throw new ConfigError(field, `必须是仓库内的相对路径，不能用绝对路径，当前是 "${raw}"`);
+  }
+  if (cleaned.split(/[/\\]+/).includes('..')) {
+    throw new ConfigError(field, `不能包含 '..' 段（会写到仓库外），当前是 "${raw}"`);
   }
   return options.keepTrailingSlash ? `${cleaned}/` : cleaned;
 }
