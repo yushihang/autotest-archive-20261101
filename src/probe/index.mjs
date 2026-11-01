@@ -15,6 +15,7 @@ import { dirname, resolve } from 'node:path';
 
 import { chromium } from 'playwright';
 
+import { joinUrl } from '../config.mjs';
 import {
   applyDomCounts,
   buildSelectorIndex,
@@ -107,7 +108,7 @@ export async function probe(config, options = {}) {
     const elements = [];
 
     for (const routePath of target.routes) {
-      const url = toUrl(target.baseUrl, routePath);
+      const url = joinUrl(target.baseUrl, routePath);
       const timeout = budgetFor(deadline, pageTimeoutMs, url);
 
       logger.info?.(`探测 ${url}`);
@@ -718,15 +719,4 @@ function remainingBudget(deadline, url) {
     });
   }
   return remaining;
-}
-
-/**
- * baseUrl 与路由拼接：baseUrl 已去掉结尾斜杠，路由一定以 '/' 开头。
- *
- * @param {string} baseUrl
- * @param {string} routePath
- * @returns {string}
- */
-function toUrl(baseUrl, routePath) {
-  return routePath === '/' ? `${baseUrl}/` : `${baseUrl}${routePath}`;
 }

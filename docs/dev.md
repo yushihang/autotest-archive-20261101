@@ -35,6 +35,8 @@ node --check scripts/check.mjs && node scripts/check.mjs
 - `tests/config.test.mjs`——`loadConfig()` 的校验与规范化，覆盖每条错误分支。
 - `tests/package.test.mjs`——仓库元数据自查：script 指向的本地文件存在、直接依赖写死精确版本、`playwright` 与 `@playwright/test` 版本一致、声明 MIT 就有 `LICENSE`。
 - `tests/types.test.mjs`——三个共享契约的常量。
+- `tests/runner-url.test.mjs`——执行器的地址拼接：`baseUrl` 带路径前缀时路由不能被 `new URL()` 解析掉。
+- `tests/runner-budget.test.mjs`——执行预算：`maxSteps` 只跳过该用例、`maxWallMs` / `maxCases` 中止整轮。
 
 这些是**单元测试，不启动浏览器**。`@playwright/test` 在这里只当测试运行器用，所以装完依赖就能跑，不需要额外 `npx playwright install` 下载浏览器。
 

@@ -99,6 +99,10 @@ cp autotest.config.example.json autotest.config.json
 
 成本上限：到限必须停并如实报告，不允许无限试错。必填对象，只允许下面 3 个字段，且**三个都必填**，没有默认值。
 
+三种上限的作用范围不同：`maxWallMs`（总时长）和 `maxCases`（用例数）是整轮上限，任一到顶即中止本次任务；
+`maxSteps` 是**单条用例**的上限，超限的那条用例整条不执行（砍掉后半段会让断言失去意义），但其后
+的用例继续跑——一条异常长的用例不该把整轮覆盖全砍掉，跳过记录会写进执行报告。
+
 这三个字段只封顶「这次跑多少」（用例数、时间、单例步数）；token 和金额预算不写在仓库配置里，
 来源见本节末尾的「与 README 的成本上限如何对应」。
 
@@ -106,7 +110,7 @@ cp autotest.config.example.json autotest.config.json
 |---|---|---|---|---|
 | `maxCases` | integer | 是 | 无 | 单次任务最多生成多少条用例 |
 | `maxWallMs` | integer | 是 | 无 | 单次任务的总时长上限，毫秒 |
-| `maxSteps` | integer | 是 | 无 | 单条用例最多多少步 |
+| `maxSteps` | integer | 是 | 无 | 单条用例最多多少步；超限的用例整条跳过，不影响其他用例 |
 
 三者共用同一套校验：
 
