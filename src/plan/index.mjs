@@ -24,11 +24,24 @@ import {
 export const DEFAULT_MAX_CASES = 20;
 
 /**
+ * 因选择器不稳定而被降权 / 跳过的元素。
+ * 报告要写清「为什么这个元素没有用例」，所以规划阶段不能把它静默丢掉。
+ *
+ * @typedef {object} UnstableElement
+ * @property {string} sourceElement 元素选择器，对应 Inventory.elements[].selector
+ * @property {string} page 元素所在路由
+ * @property {string} name 元素的可访问名
+ * @property {string} reason 人可读的原因
+ */
+
+/**
  * 规划报告。cases 是契约要求的 TestCase[]；dropped 是被 maxCases 截断的用例 id。
  * @typedef {object} PlanReport
  * @property {import('../types.mjs').TestCase[]} cases 最终用例，已按优先级排序
  * @property {string[]} dropped 因 maxCases 被丢弃的用例 id，保留原优先级顺序
  * @property {number} total 去重后、截断前的候选数量
+ * @property {number} maxCases 本次生效的用例数上限，报告里要写「超出多少条」时用
+ * @property {UnstableElement[]} unstable 选择器不稳定、被降权或跳过的元素，按 Inventory 顺序
  */
 
 /**
@@ -181,11 +194,12 @@ function buildCandidate(rule, ctx, order) {
  * @returns {PlanReport}
  */
 export function planCasesReport(inventory, limits) {
+  const maxCases = normalizeMaxCases(limits?.maxCases);
+
   if (!inventory || typeof inventory !== 'object' || !Array.isArray(inventory.elements)) {
-    return { cases: [], dropped: [], total: 0 };
+    return { cases: [], dropped: [], total: 0, maxCases, unstable: [] };
   }
 
-  const maxCases = normalizeMaxCases(limits?.maxCases);
   const maxSteps = normalizeMaxSteps(limits?.maxSteps);
 
   /** @type {import('../types.mjs').InventoryElement[]} */
@@ -265,21 +279,35 @@ export function planCasesReport(inventory, limits) {
   const kept = sorted.slice(0, maxCases);
   const dropped = sorted.slice(maxCases).map((candidate) => candidate.testCase.id);
 
+  // 不稳定元素按 Inventory 顺序原样报出来；它们可能降级后仍有用例，也可能被整条跳过。
+  const unstable = elements
+    .filter((element) => element.unstable === true)
+    .map((element) => ({
+      sourceElement: element.selector,
+      page: element.page,
+      name: element.name,
+      reason: '选择器含自增 id / 随机 hash，不稳定：已降权，降到最低仍不值的直接跳过',
+    }));
+
   return {
     cases: kept.map((candidate) => candidate.testCase),
     dropped,
     total: sorted.length,
+    maxCases,
+    unstable,
   };
 }
 
 /**
  * 从 Inventory 规划用例。
  *
- * 返回值是 TestCase[]；被 maxCases 截断的 id 以非枚举属性 `dropped` 挂在数组上，
- * 既保持契约要求的数组形状，又能让调用方报告「哪些没测、为什么没测」：
+ * 返回值是 TestCase[]；被 maxCases 截断的 id、生效的 maxCases、不稳定元素以非枚举
+ * 属性挂在数组上，既保持数组形状，又能让下游报告「哪些没测、为什么没测」：
  *
  *   const cases = planCases(inventory, limits);
- *   cases.dropped // string[]
+ *   cases.dropped   // string[]
+ *   cases.maxCases  // number
+ *   cases.unstable  // UnstableElement[]
  *
  * 需要一次拿到 cases / dropped / total 时用 planCasesReport。
  *
@@ -290,11 +318,18 @@ export function planCasesReport(inventory, limits) {
 export function planCases(inventory, limits) {
   const report = planCasesReport(inventory, limits);
 
-  Object.defineProperty(report.cases, 'dropped', {
-    value: report.dropped,
-    enumerable: false,
-    configurable: false,
-  });
+  // 与 dropped 一致：非枚举，避免污染 JSON 里的 TestCase[]。
+  for (const [name, value] of [
+    ['dropped', report.dropped],
+    ['maxCases', report.maxCases],
+    ['unstable', report.unstable],
+  ]) {
+    Object.defineProperty(report.cases, name, {
+      value,
+      enumerable: false,
+      configurable: false,
+    });
+  }
 
   return report.cases;
 }

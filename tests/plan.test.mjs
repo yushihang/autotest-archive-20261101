@@ -103,6 +103,7 @@ test('maxCases 截断后，保留的与 dropped 合起来正好是 total', () =>
   const capped = planCasesReport(SAMPLE_INVENTORY, { maxCases: 3 });
 
   expect(capped.cases).toHaveLength(3);
+  expect(capped.maxCases).toBe(3);
   expect(capped.total).toBe(full.total);
   expect(capped.dropped).toHaveLength(capped.total - capped.cases.length);
 
@@ -122,6 +123,10 @@ test('unstable 的 P2 用例被跳过', () => {
   // P2 已经是最低优先级，降级后无可降 → 整条跳过，而不是留下 P2。
   expect(unstable.cases).toHaveLength(0);
   expect(unstable.total).toBe(0);
+  // 跳过了也要能说清「哪个元素、为什么」，否则报告里只剩一个空洞。
+  expect(stable.unstable).toEqual([]);
+  expect(unstable.unstable).toHaveLength(1);
+  expect(unstable.unstable[0]).toMatchObject({ sourceElement: '#docs', page: '/' });
 });
 
 test('select 元素总有用例：有 options 选第一项，没有 options 退化为展开下拉框', () => {

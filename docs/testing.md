@@ -175,7 +175,9 @@ npm test -- tests/plan.test.mjs           # 只验规划器与 TestCase 形状
 | 文件 | 钉住什么 | 对应契约 |
 |---|---|---|
 | `tests/types.test.mjs` | `ATTEMPT_STATUSES` 里没有 `flaky`；`ATTEMPT_STATUSES` 恰好是 `RUN_STATUSES` 去掉 `flaky`；`WAIT_STATES` 取值；六组常量都被 `Object.freeze` | `TestCase` / `RunResult` 的枚举 |
-| `tests/plan.test.mjs` | 同一份 `Inventory` 规划两次结果深相等；每条用例满足 `TestCase` 形状（非空 `steps`、`goto` 在首位、非空 `expect`、`id` 唯一）；`maxCases` 截断报告；`select` 不静默 0 条 | `Inventory` 输入、`TestCase[]` 输出 |
+| `tests/plan.test.mjs` | 同一份 `Inventory` 规划两次结果深相等；每条用例满足 `TestCase` 形状（非空 `steps`、`goto` 在首位、非空 `expect`、`id` 唯一）；`maxCases` 截断报告；`unstable` 元素原样进报告；`select` 不静默 0 条 | `Inventory` 输入、`TestCase[]` 输出 |
+| `tests/generate-specs.test.mjs` | 只有 `passed` 生成 spec；同输入字节级一致；断言非空且不是标题断言；引号 / 换行转义；按路由分文件 | `TestCase[]` / `RunResult[]` 的输出消费方 |
+| `tests/report-markdown.test.mjs` | 覆盖清单按优先级；未覆盖原因（unstable / `maxCases` / 执行跳过）；失败证据五项；flaky 单列；时间与步数用量 | `TestCase[]` / `RunResult[]` 的输出消费方 |
 | `tests/package.test.mjs` | npm script 指向的本地文件存在、依赖是精确版本、`playwright` 与 `@playwright/test` 版本一致 | 仓库本身的可用性 |
 | `tests/config.test.mjs` | `loadConfig()` 的校验与规范化，每条错误分支 | 配置，不是三个契约 |
 

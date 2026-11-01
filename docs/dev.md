@@ -37,6 +37,8 @@ node --check scripts/check.mjs && node scripts/check.mjs
 - `tests/types.test.mjs`——三个共享契约的常量。
 - `tests/runner-url.test.mjs`——执行器的地址拼接：`baseUrl` 带路径前缀时路由不能被 `new URL()` 解析掉。
 - `tests/runner-budget.test.mjs`——执行预算：`maxSteps` 只跳过该用例、`maxWallMs` / `maxCases` 中止整轮。
+- `tests/generate-specs.test.mjs`——生成器：只给 passed 生成 spec、同输入字节级一致、转义不破坏代码、按路由分文件。
+- `tests/report-markdown.test.mjs`——Markdown 报告：覆盖清单按优先级、未覆盖原因、失败证据、flaky 单列、时间与步数用量。
 
 这些是**单元测试，不启动浏览器**。`@playwright/test` 在这里只当测试运行器用，所以装完依赖就能跑，不需要额外 `npx playwright install` 下载浏览器。
 
