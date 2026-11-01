@@ -154,14 +154,14 @@ node demo-app/server.mjs
 
 ### 目录结构
 
-- `src/`——运行时模块，当前有 `config.mjs`（配置加载与校验）和 `types.mjs`（共享契约）。
+- `src/`——运行时模块：`config.mjs`（配置加载与校验）、`types.mjs`（共享契约）、`probe/`（探测）、`plan/`（规划）、`runner/`（执行）、`generate/`（生成 spec）、`report/`（Markdown 报告）、`views.mjs`（产物视图）。
 - `tests/`——单元测试。
 - `demo-app/`——零依赖演示靶子（登录 + 待办）。
 - `docs/`——[配置说明](docs/config.md)、[开发命令](docs/dev.md)、[契约验证](docs/testing.md)、[失败上报演示](docs/money-budget-demo.md)。
 
 ### 现状
 
-MVP 进行中。骨架和契约已经定死，探测 / 规划 / 执行还没写。
+MVP 进行中。骨架和契约已经定死；配置、探测、规划、执行、生成测试代码与 Markdown 报告已经落地，提 PR 与 CLI 入口还没做。
 
 已完成：
 
@@ -169,12 +169,12 @@ MVP 进行中。骨架和契约已经定死，探测 / 规划 / 执行还没写�
 - [x] 配置：`src/config.mjs` 的 `loadConfig()` 读 JSON、校验并规范化，缺字段时报错带字段名；完整示例见 `autotest.config.example.json`。
 - [x] 测试：`npm test`（`playwright test`，不开浏览器）覆盖配置校验的每条错误分支与契约常量，用例在 `tests/`。
 
-还没做（各自一个 issue）：
+模块进度（各自一个 issue）：
 
-- [ ] 探测：给 `baseUrl` + `routes`，产出 `Inventory`。
-- [ ] 规划：从 `Inventory` 推出 `TestCase[]`，按 P0 / P1 / P2 排序。
-- [ ] 执行：在 Playwright 里跑，产出 `RunResult` 并留下证据（输入、期望、实际、最小复现、截图）。
-- [ ] 生成与提 PR：把通过的用例写成测试文件落进 `testsDir`，按「PR 规范」提 PR。
+- [x] 探测：给 `baseUrl` + `routes`，产出 `Inventory`。
+- [x] 规划：从 `Inventory` 推出 `TestCase[]`，按 P0 / P1 / P2 排序。
+- [x] 执行：在 Playwright 里跑，产出 `RunResult` 并留下证据（输入、期望、实际、最小复现、截图）。
+- [ ] 生成与提 PR：`src/generate/` 已经把通过的用例落成 `specs/<module>.spec.mjs`，`src/report/` 产出 `report.md`；把产物写进目标仓库的 `testsDir` 并提 PR 还没做。
 
 ### 下一步要定的事
 

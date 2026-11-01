@@ -694,6 +694,9 @@ export async function runPlanReport(plan, options = {}) {
  *   results.aborted;    // boolean
  *   results.abortReason; // string | null
  *   results.skipped;    // { caseId, reason }[]：单例超步数被整条跳过的用例
+ *   results.elapsedMs;  // number：整轮耗时
+ *   results.budget;     // 预算账本快照（含 stepsRun）
+ *   results.baseUrl;    // string：本次实际使用的地址，生成 spec 时要用
  *
  * 单例步数（limits.maxSteps）超限的用例只跳过它自己，不中止整轮，也不会出现在 results 里，
  * 所以读结果时必须看 `skipped`：只数数组长度会以为这条用例凭空消失了。
@@ -710,7 +713,7 @@ export async function runPlanReport(plan, options = {}) {
  *   cwd?: string,
  *   browser?: import('playwright').Browser,
  * }} options
- * @returns {Promise<import('../types.mjs').RunResult[] & { aborted: boolean, abortReason: string | null, skipped: { caseId: string, reason: string }[] }>}
+ * @returns {Promise<import('../types.mjs').RunResult[] & { aborted: boolean, abortReason: string | null, skipped: { caseId: string, reason: string }[], elapsedMs: number, budget: object, baseUrl: string, limits: object }>}
  */
 export async function runPlan(plan, options = {}) {
   const report = await runPlanReport(plan, options);
@@ -732,8 +735,16 @@ export async function runPlan(plan, options = {}) {
     enumerable: false,
     configurable: false,
   });
+  // 生成 spec / 写报告要用的运行元信息：不挂上去的话调用方只能再跑一次 runPlanReport。
+  for (const name of ['elapsedMs', 'budget', 'baseUrl', 'limits']) {
+    Object.defineProperty(results, name, {
+      value: report[name],
+      enumerable: false,
+      configurable: false,
+    });
+  }
 
-  return /** @type {import('../types.mjs').RunResult[] & { aborted: boolean, abortReason: string | null, skipped: { caseId: string, reason: string }[] }} */ (
+  return /** @type {import('../types.mjs').RunResult[] & { aborted: boolean, abortReason: string | null, skipped: { caseId: string, reason: string }[], elapsedMs: number, budget: object, baseUrl: string, limits: object }} */ (
     results
   );
 }
