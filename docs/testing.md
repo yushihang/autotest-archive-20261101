@@ -2,7 +2,7 @@
 
 三个契约是模块之间唯一的接口：探测产出 `Inventory`，规划产出 `TestCase[]`，执行产出 `RunResult`。它们只用 JSDoc `@typedef` 写在 [`src/types.mjs`](../src/types.mjs) 里，没有 JSON Schema，也没有编译步骤，所以改完到底有没有破坏契约，得有一组能照着敲的命令。
 
-本文只讲怎么验证。字段语义、为什么只增不改，看 `src/types.mjs` 的注释和 `README.md` 的「技术栈」「设计约束」两节。
+本文只讲怎么验证。字段语义、为什么只增不改，看 [`src/types.mjs`](../src/types.mjs) 的文件头注释（以及各 `@typedef` 里每个 `@property` 的说明）。
 
 ## 先看结论
 
