@@ -16,6 +16,7 @@ import { dirname, resolve } from 'node:path';
 import { chromium } from 'playwright';
 
 import {
+  applyDomCounts,
   buildSelectorIndex,
   dedupeElements,
   sortByStability,
@@ -91,7 +92,11 @@ export async function probe(config, options = {}) {
       throw new ProbeError('无法创建浏览器上下文', { cause });
     }
 
-    await assertReachable(context, target.baseUrl, budgetFor(deadline, pageTimeoutMs));
+    await assertReachable(
+      context,
+      target.baseUrl,
+      budgetFor(deadline, pageTimeoutMs, target.baseUrl),
+    );
 
     const page = await context.newPage();
     page.setDefaultTimeout(pageTimeoutMs);
@@ -103,11 +108,15 @@ export async function probe(config, options = {}) {
 
     for (const routePath of target.routes) {
       const url = toUrl(target.baseUrl, routePath);
-      const timeout = budgetFor(deadline, pageTimeoutMs);
+      const timeout = budgetFor(deadline, pageTimeoutMs, url);
 
       logger.info?.(`探测 ${url}`);
 
-      const response = await gotoOrThrow(page, url, timeout, 'load');
+      // 导航 + networkidle 共用这一点预算：两条都拿满会让单条路由花掉 2× timeout。
+      const response = await gotoOrThrow(page, url, timeout, 'load', deadline);
+
+      // 标题与采集各受 pageTimeoutMs 约束；万一这步把预算花超了，
+      // 路由结束和写文件前的 remainingBudget 检查会抛错，不会静默成功。
       const title = await readTitle(page);
 
       const facts = await collectFactsFromPage(page, target.origin);
@@ -122,6 +131,10 @@ export async function probe(config, options = {}) {
       const index = buildSelectorIndex(facts.elements);
       const pageElements = facts.elements.map((item) => toInventoryElement(item, routePath, index));
 
+      // 索引只看得到「可见且已收集」的元素，而 testid / id / name 是全文档匹配的：
+      // 再按真实 DOM 命中数核一遍，隐藏副本也会被算进去。
+      await markDuplicatesByDom(page, pageElements, deadline);
+
       // 逐个 push 而不是展开：元素多的时候 spread 会撞上参数个数上限。
       for (const element of sortByStability(dedupeElements(pageElements))) {
         elements.push(element);
@@ -132,7 +145,13 @@ export async function probe(config, options = {}) {
       if (response) route.status = response.status();
       if (title !== '') route.title = title;
       routes.push(route);
+
+      // 这条路由已经跑完：下一条开始前必须还有预算，否则就在这里停，不带病继续。
+      remainingBudget(deadline, url);
     }
+
+    // 写文件前最后核一次：超时只能以抛错结束，不能带着「已经超了」的状态静默写出 inventory。
+    remainingBudget(deadline);
 
     /** @type {import('../types.mjs').Inventory} */
     const inventory = {
@@ -268,6 +287,34 @@ function collectFacts(args) {
   }
 
   /**
+   * 元素自身能进无障碍树的文本：跳过 aria-hidden 子树和不渲染的子树。
+   *
+   * 直接用 textContent 会把图标文案拼进可访问名：`<button><span aria-hidden="true">×</span>删除</button>`
+   * 浏览器算出来的名字是「删除」，拼成「× 删除」的 role 选择器命中 0 个，却被当成 stable。
+   * 拼接语义与 textContent 一致（不加分隔符），只是滤掉看不见的文本节点。
+   *
+   * @param {Node | null | undefined} node
+   * @returns {string}
+   */
+  function textOf(node) {
+    if (!node) return '';
+
+    const parts = [];
+    const walker = document.createTreeWalker(node, 4 /* NodeFilter.SHOW_TEXT */);
+
+    for (let current = walker.nextNode(); current; current = walker.nextNode()) {
+      const parent = current.parentElement;
+      if (!parent) continue;
+      if (parent.closest('[aria-hidden="true"]')) continue;
+      // checkVisibility() 覆盖 display:none / visibility:hidden 的祖先（旧引擎没有就退回包含）。
+      if (typeof parent.checkVisibility === 'function' && !parent.checkVisibility()) continue;
+      parts.push(current.nodeValue ?? '');
+    }
+
+    return collapse(parts.join(''));
+  }
+
+  /**
    * 可访问名的近似计算：aria-label → aria-labelledby → <label for> → 包裹的 <label>
    * → placeholder → 按钮的 value → 可见文案 → title。
    * @param {Element} element
@@ -281,7 +328,7 @@ function collectFacts(args) {
     if (labelledBy !== '') {
       const text = labelledBy
         .split(' ')
-        .map((refId) => collapse(document.getElementById(refId)?.textContent))
+        .map((refId) => textOf(document.getElementById(refId)))
         .join(' ');
       if (collapse(text) !== '') return collapse(text);
     }
@@ -291,13 +338,13 @@ function collectFacts(args) {
       const explicitLabel = Array.from(document.querySelectorAll('label[for]')).find(
         (label) => label.getAttribute('for') === ownId,
       );
-      const text = collapse(explicitLabel?.textContent);
+      const text = textOf(explicitLabel);
       if (text !== '') return text;
     }
 
     const wrappingLabel = element.closest('label');
     if (wrappingLabel) {
-      const text = collapse(wrappingLabel.textContent);
+      const text = textOf(wrappingLabel);
       if (text !== '') return text;
     }
 
@@ -313,7 +360,13 @@ function collectFacts(args) {
       }
     }
 
-    const text = collapse(element.textContent);
+    // <select> 的可访问名来自 label / aria-label，浏览器不拿 option 文本当名字：
+    // 用 textContent 会拼出「请选择城市广州北京」这种定位不到的名字。
+    if (element.tagName.toLowerCase() === 'select') {
+      return collapse(element.getAttribute('title'));
+    }
+
+    const text = textOf(element);
     if (text !== '') return text;
 
     return collapse(element.getAttribute('title'));
@@ -465,21 +518,73 @@ async function launchBrowser() {
 /**
  * 导航到目标地址。失败一律转成带 URL 的 ProbeError，不吞异常。
  *
+ * 导航超时和总预算耗尽是两回事，错误信息要分开：前者说明页面本身慢，后者说明该停下来了。
+ *
  * @param {import('playwright').Page} page
  * @param {string} url
- * @param {number} timeout
+ * @param {number} timeout 导航可用的时间（已按剩余总预算封顶）
  * @param {'load' | 'domcontentloaded'} waitUntil
+ * @param {number} deadline 总预算的截止时间戳
  * @returns {Promise<import('playwright').Response | null>}
  */
-async function gotoOrThrow(page, url, timeout, waitUntil) {
+async function gotoOrThrow(page, url, timeout, waitUntil, deadline) {
+  /** @type {import('playwright').Response | null} */
+  let response;
+
   try {
-    const response = await page.goto(url, { timeout, waitUntil });
-    // 网络空闲只用来等 SPA 渲染完，等不到也不算错：DOM 已经拿到了。
-    await page.waitForLoadState('networkidle', { timeout }).catch(() => {});
-    return response;
+    response = await page.goto(url, { timeout, waitUntil });
   } catch (cause) {
     throw new ProbeError(`探测 ${url} 失败：页面打不开或加载超时`, { url, cause });
   }
+
+  // 网络空闲只用来等 SPA 渲染完，等不到也不算错：DOM 已经拿到了。
+  // 但它只能花「剩余总预算」，不能重新领一份单页超时，否则单条路由最多能花 2× timeout。
+  const remaining = remainingBudget(deadline, url);
+  await page.waitForLoadState('networkidle', { timeout: remaining }).catch(() => {});
+
+  return response;
+}
+
+/**
+ * 用真实 DOM 的命中数修正唯一性判定。
+ *
+ * `buildSelectorIndex` 只能看见 facts.elements，而这份数组已经滤掉了隐藏元素、hidden input
+ * 和非 http(s) 链接；`[data-testid=]` / `#id` / `[name=]` 却是全文档匹配的。响应式导航或
+ * 未打开的弹窗里留一份隐藏副本，就会让可见的那份被判成 stable —— 下游 locator 命中 2 个节点，
+ * strict mode 必然失败。这里对每个候选选择器数一次全文档命中数（含隐藏元素）：恰好 1 才算稳定。
+ *
+ * 代价是每个元素一次 locator 往返，所以只查索引认为稳定、且还没查过的选择器。
+ *
+ * @param {import('playwright').Page} page
+ * @param {import('../types.mjs').InventoryElement[]} elements
+ * @param {number} deadline
+ * @returns {Promise<void>}
+ */
+async function markDuplicatesByDom(page, elements, deadline) {
+  /** @type {Map<string, number>} 同一个 selector 只数一次 */
+  const counts = new Map();
+
+  for (const element of elements) {
+    if (element.unstable === true) continue;
+    if (counts.has(element.selector)) continue;
+
+    // 数一遍也要花时间：预算耗尽时照样得停，不能把这段开销算在预算之外。
+    remainingBudget(deadline, page.url());
+
+    /** @type {number} */
+    let count;
+    try {
+      count = await page.locator(element.selector).count();
+    } catch {
+      // 选择器语法不合法 / 引擎不支持：数不出来就当定位不到。
+      // 标 unstable 而不是丢掉元素 —— 探测阶段不静默丢东西。
+      count = 0;
+    }
+
+    counts.set(element.selector, count);
+  }
+
+  applyDomCounts(elements, counts);
 }
 
 /**
@@ -580,14 +685,30 @@ function readPageTimeoutMs(value) {
  *
  * @param {number} deadline
  * @param {number} pageTimeoutMs
+ * @param {string} [url] 当前正在探测的地址，出错时写进错误信息便于复现
  * @returns {number}
  */
-function budgetFor(deadline, pageTimeoutMs) {
+function budgetFor(deadline, pageTimeoutMs, url) {
+  return Math.min(pageTimeoutMs, remainingBudget(deadline, url));
+}
+
+/**
+ * 剩余总预算（毫秒）。到限就抛错 —— 这是唯一允许的「超时」出口，
+ * 不许带着已经超时的状态继续跑或静默写出 inventory。
+ *
+ * @param {number} deadline
+ * @param {string} [url]
+ * @returns {number}
+ */
+function remainingBudget(deadline, url) {
   const remaining = deadline - Date.now();
   if (remaining <= 0) {
-    throw new ProbeError('探测总时长已超过 limits.maxWallMs，停止并报告，不继续无限重试');
+    const where = url ? `（停在 ${url}）` : '';
+    throw new ProbeError(`探测总时长已超过 limits.maxWallMs，停止并报告${where}，不继续无限重试`, {
+      url,
+    });
   }
-  return Math.min(pageTimeoutMs, remaining);
+  return remaining;
 }
 
 /**

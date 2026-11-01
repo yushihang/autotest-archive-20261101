@@ -428,6 +428,37 @@ export function toInventoryElement(facts, page, index) {
 }
 
 /**
+ * 用真实 DOM 的命中数修正唯一性判定。
+ *
+ * {@link isUnstableSelector} 的索引只能看见「可见且已收集」的元素，而 `[data-testid=]` / `#id` /
+ * `[name=]` 是全文档匹配的：响应式导航或未打开的弹窗里留一份隐藏副本，可见的那份就会被判成
+ * stable，下游 locator 命中 2 个节点，strict mode 必然失败。所以生成完元素后由调用方按
+ * selector 数一遍全文档命中数（含隐藏元素、hidden input），这里只负责合并：
+ *
+ * - 命中数恰好 1 → 保持原判（已经判了 unstable 的不会被改回稳定，宁可多降权不可漏降权）；
+ * - 命中数不是 1 → 标 unstable：0 命中说明选择器定位不到，2+ 说明不唯一；
+ * - counts 里没有这个 selector → 不动（调用方可能跳过了查询，或本来就是不稳定的）。
+ *
+ * @param {import('../types.mjs').InventoryElement[]} elements
+ * @param {Map<string, number>} counts 每个 selector 在整个文档里的命中数
+ * @returns {import('../types.mjs').InventoryElement[]} 入参数组本身，就地修正
+ */
+export function applyDomCounts(elements, counts) {
+  const list = Array.isArray(elements) ? elements : [];
+  const table = counts instanceof Map ? counts : new Map();
+
+  for (const element of list) {
+    if (!element || typeof element.selector !== 'string') continue;
+
+    const count = table.get(element.selector);
+    if (typeof count !== 'number') continue;
+    if (count !== 1) element.unstable = true;
+  }
+
+  return list;
+}
+
+/**
  * 按 (page, selector) 去重，保留第一次出现的顺序。
  *
  * @param {import('../types.mjs').InventoryElement[]} elements

@@ -11,6 +11,7 @@
 import { expect, test } from '@playwright/test';
 
 import {
+  applyDomCounts,
   buildSelector,
   buildSelectorIndex,
   dedupeElements,
@@ -460,6 +461,57 @@ test.describe('dedupeElements', () => {
   test('非数组输入返回空数组', () => {
     expect(dedupeElements(undefined)).toEqual([]);
     expect(dedupeElements(null)).toEqual([]);
+  });
+});
+
+test.describe('applyDomCounts', () => {
+  test('隐藏副本让命中数变成 2：可见的那份也判 unstable', () => {
+    // 响应式导航里留一份隐藏的 data-testid="save"：索引只看得到可见元素，
+    // 但 Playwright 的 [data-testid=] 是全文档匹配，命中 2 个必然 strict mode 失败。
+    const element = { page: '/', selector: '[data-testid="save"]', role: 'button', kind: 'button' };
+    const counts = new Map([['[data-testid="save"]', 2]]);
+
+    expect(applyDomCounts([element], counts)[0].unstable).toBe(true);
+  });
+
+  test('命中数恰好 1 时保持原判，不写 unstable 字段', () => {
+    const element = { page: '/', selector: '#save', role: 'button', kind: 'button' };
+    const counts = new Map([['#save', 1]]);
+
+    expect(applyDomCounts([element], counts)[0]).toBe(element);
+    expect('unstable' in element).toBe(false);
+  });
+
+  test('0 命中（选择器定位不到）同样判 unstable，而不是丢掉元素', () => {
+    const element = {
+      page: '/',
+      selector: 'role=button[name="× 删除"i]',
+      role: 'button',
+      kind: 'button',
+    };
+    const counts = new Map([['role=button[name="× 删除"i]', 0]]);
+
+    expect(applyDomCounts([element], counts)).toEqual([{ ...element, unstable: true }]);
+  });
+
+  test('不会把已判 unstable 的元素改回稳定，也不会去掉它的标记', () => {
+    const element = { page: '/', selector: 'div > button', kind: 'button', unstable: true };
+    const counts = new Map([['div > button', 1]]);
+
+    expect(applyDomCounts([element], counts)[0].unstable).toBe(true);
+  });
+
+  test('counts 里没有这个 selector 时不动它', () => {
+    const element = { page: '/', selector: '#a', role: 'link', kind: 'link' };
+
+    expect('unstable' in applyDomCounts([element], new Map())[0]).toBe(false);
+  });
+
+  test('非数组与非 Map 输入不抛错', () => {
+    expect(applyDomCounts(undefined, undefined)).toEqual([]);
+    expect(applyDomCounts([{ page: '/', selector: '#a', kind: 'link' }], null)).toEqual([
+      { page: '/', selector: '#a', kind: 'link' },
+    ]);
   });
 });
 
