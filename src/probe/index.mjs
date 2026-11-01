@@ -531,6 +531,8 @@ async function gotoOrThrow(page, url, timeout, waitUntil, deadline) {
   /** @type {import('playwright').Response | null} */
   let response;
 
+  // 单页预算同时覆盖导航与网络空闲，避免单条路由花掉 2× timeout 或耗尽整轮总预算。
+  const routeDeadline = Date.now() + timeout;
   try {
     response = await page.goto(url, { timeout, waitUntil });
   } catch (cause) {
@@ -538,8 +540,7 @@ async function gotoOrThrow(page, url, timeout, waitUntil, deadline) {
   }
 
   // 网络空闲只用来等 SPA 渲染完，等不到也不算错：DOM 已经拿到了。
-  // 但它只能花「剩余总预算」，不能重新领一份单页超时，否则单条路由最多能花 2× timeout。
-  const remaining = remainingBudget(deadline, url);
+  const remaining = Math.max(0, Math.min(routeDeadline - Date.now(), remainingBudget(deadline, url)));
   await page.waitForLoadState('networkidle', { timeout: remaining }).catch(() => {});
 
   return response;
