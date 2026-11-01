@@ -12,7 +12,8 @@
     "start": "node src/cli.mjs",
     "demo": "node demo-app/server.mjs",
     "verify": "bash scripts/verify-mvp.sh",
-    "test": "playwright test"
+    "test": "playwright test",
+    "lint": "node --check scripts/check.mjs && node scripts/check.mjs"
   },
   "dependencies": {
     "playwright": "1.64.1"
